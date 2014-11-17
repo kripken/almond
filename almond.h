@@ -3,151 +3,89 @@
 //     http://marijnhaverbeke.nl/git/acorn
 //
 // MIT license.
+//
+// Porting differences:
+//  * just parses; defers AST construction to a Constructor
+//  * various options removed
+//  * "locations" option is always on
 
-(function(root, mod) {
-  if (typeof exports == "object" && typeof module == "object") return mod(exports); // CommonJS
-  if (typeof define == "function" && define.amd) return define(["exports"], mod); // AMD
-  mod(root.acorn || (root.acorn = {})); // Plain browser env
-})(this, function(exports) {
-  "use strict";
+#include <string.h>
 
-  exports.version = "0.9.1";
-
-  // The main exported interface (under `self.acorn` when in the
-  // browser) is a `parse` function that takes a code string and
-  // returns an abstract syntax tree as specified by [Mozilla parser
-  // API][api], with the caveat that inline XML is not recognized.
-  //
-  // [api]: https://developer.mozilla.org/en-US/docs/SpiderMonkey/Parser_API
-
-  var options, input, inputLen, sourceFile;
-
-  exports.parse = function(inpt, opts) {
-    input = String(inpt); inputLen = input.length;
-    setOptions(opts);
-    initTokenState();
-    var startPos = options.locations ? [tokPos, new Position] : tokPos;
-    initParserState();
-    return parseTopLevel(options.program || startNodeAt(startPos));
-  };
-
-  // A second optional argument can be given to further configure
-  // the parser process. These options are recognized:
-
-  var defaultOptions = exports.defaultOptions = {
+template<class Constructor, class ASTNode>
+struct Almond {
+  struct Options {
     // `ecmaVersion` indicates the ECMAScript version to parse. Must
     // be either 3, or 5, or 6. This influences support for strict
     // mode, the set of reserved words, support for getters and
     // setters and other features.
-    ecmaVersion: 5,
+    int ecmaVersion;
     // Turn on `strictSemicolons` to prevent the parser from doing
     // automatic semicolon insertion.
-    strictSemicolons: false,
+    bool strictSemicolons;
     // When `allowTrailingCommas` is false, the parser will not allow
     // trailing commas in array and object literals.
-    allowTrailingCommas: true,
+    bool allowTrailingCommas;
     // By default, reserved words are not enforced. Enable
     // `forbidReserved` to enforce them. When this option has the
     // value "everywhere", reserved words and keywords can also not be
     // used as property names.
-    forbidReserved: false,
+    bool forbidReserved;
     // When enabled, a return at the top level is not considered an
     // error.
-    allowReturnOutsideFunction: false,
-    // When `locations` is on, `loc` properties holding objects with
-    // `start` and `end` properties in `{line, column}` form (with
-    // line being 1-based and column 0-based) will be attached to the
-    // nodes.
-    locations: false,
-    // A function can be passed as `onToken` option, which will
-    // cause Acorn to call that function with object in the same
-    // format as tokenize() returns. Note that you are not
-    // allowed to call the parser from the callback—that will
-    // corrupt its internal state.
-    onToken: null,
-    // A function can be passed as `onComment` option, which will
-    // cause Acorn to call that function with `(block, text, start,
-    // end)` parameters whenever a comment is skipped. `block` is a
-    // boolean indicating whether this is a block (`/* */`) comment,
-    // `text` is the content of the comment, and `start` and `end` are
-    // character offsets that denote the start and end of the comment.
-    // When the `locations` option is on, two more parameters are
-    // passed, the full `{line, column}` locations of the start and
-    // end of the comments. Note that you are not allowed to call the
-    // parser from the callback—that will corrupt its internal state.
-    onComment: null,
-    // Nodes have their start and end characters offsets recorded in
-    // `start` and `end` properties (directly on the node, rather than
-    // the `loc` object, which holds line/column data. To also add a
-    // [semi-standardized][range] `range` property holding a `[start,
-    // end]` array with the same numbers, set the `ranges` option to
-    // `true`.
-    //
-    // [range]: https://bugzilla.mozilla.org/show_bug.cgi?id=745678
-    ranges: false,
-    // It is possible to parse multiple files into a single AST by
-    // passing the tree produced by parsing the first file as
-    // `program` option in subsequent parses. This will add the
-    // toplevel forms of the parsed file to the `Program` (top) node
-    // of an existing parse tree.
-    program: null,
-    // When `locations` is on, you can pass this to record the source
-    // file in every node's `loc` object.
-    sourceFile: null,
-    // This value, if given, is stored in every node, whether
-    // `locations` is on or off.
-    directSourceFile: null,
+    bool allowReturnOutsideFunction;
     // When enabled, parenthesized expressions are represented by
     // (non-standard) ParenthesizedExpression nodes
-    preserveParens: false
+    bool preserveParens;
+
+    Options() : ecmaVersion(5),
+                strictSemicolons(false),
+                allowTrailingCommas(true),
+                forbidReserved(false),
+                allowReturnOutsideFunction(false),
+                locations(false),
+                preserveParens(false) {}
   };
+
+  Options opts;
+
+  char *input;
+  int inputLen;
+  char *sourceFile;
+
+  struct TokenPosition {
+    int pos, line, column;
+    TokenPosition(int p, Almond& A) : pos(p), line(a.tokCurLine), column(a.tokPos - a.tokLineStart) {}
+  };
+
+  Almond() : input(nullptr), inputLen(0), sourceFile("?") {}
+
+  ASTNode* parse(char *inpt, Options opts) {
+    input = inpt;
+    inputLen = strlen(input.length);
+    options = opts;
+    initTokenState();
+    TokenPosition startPos = TokenPosition(tokPos, *this);
+    initParserState();
+    return parseTopLevel(startNodeAt(startPos));
+  }
 
   // This function tries to parse a single expression at a given
   // offset in a string. Useful for parsing mixed-language formats
   // that embed JavaScript expressions.
 
-  exports.parseExpressionAt = function(inpt, pos, opts) {
-    input = String(inpt); inputLen = input.length;
+  ASTNode* parseExpressionAt(char *inpt, int pos, Options opts) {
+    input = inpt; inputLen = strlen(input);
     setOptions(opts);
     initTokenState(pos);
     initParserState();
     return parseExpression();
-  };
+  }
 
-  var isArray = function (obj) {
-    return Object.prototype.toString.call(obj) === "[object Array]";
-  };
-
-  function setOptions(opts) {
-    options = {};
+  void setOptions(Options opts) {
+    options = opts;
     for (var opt in defaultOptions)
       options[opt] = opts && has(opts, opt) ? opts[opt] : defaultOptions[opt];
     sourceFile = options.sourceFile || null;
-    if (isArray(options.onToken)) {
-      var tokens = options.onToken;
-      options.onToken = function (token) {
-        tokens.push(token);
-      };
-    }
-    if (isArray(options.onComment)) {
-      var comments = options.onComment;
-      options.onComment = function (block, text, start, end, startLoc, endLoc) {
-        var comment = {
-          type: block ? 'Block' : 'Line',
-          value: text,
-          start: start,
-          end: end
-        };
-        if (options.locations) {
-          comment.loc = new SourceLocation();
-          comment.loc.start = startLoc;
-          comment.loc.end = endLoc;
-        }
-        if (options.ranges)
-          comment.range = [start, end];
-        comments.push(comment);
-      };
-    }
     isKeyword = options.ecmaVersion >= 6 ? isEcma6Keyword : isEcma5AndLessKeyword;
   }
 
@@ -157,7 +95,7 @@
   // offset. `input` should be the code string that the offset refers
   // into.
 
-  var getLineInfo = exports.getLineInfo = function(input, offset) {
+   getLineInfo = exports.getLineInfo = function(input, offset) {
     for (var line = 1, cur = 0;;) {
       lineBreak.lastIndex = cur;
       var match = lineBreak.exec(input);
