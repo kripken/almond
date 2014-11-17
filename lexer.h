@@ -35,16 +35,10 @@
 *
 *****************************************************************************/
 
-module parser.lexer;
+#include <string>
+#include <algorithm> // for sort
 
-import std.stdio;
-import std.file;
-import std.string;
-import std.format;
-import std.regex;
-import std.conv;
-import std.algorithm;
-import std.array;
+namespace almond {
 
 /**
 Operator information structure
@@ -52,7 +46,7 @@ Operator information structure
 struct OpInfo
 {
     /// String representation
-    wstring str;
+    std::string str;
 
     /// Operator arity
     int arity;
@@ -62,93 +56,90 @@ struct OpInfo
 
     /// Associativity, left-to-right or right-to-left
     char assoc;
+};
 
-    /// Non-associative flag (e.g.: - and / are not associative)
-    bool nonAssoc = false;
-}
+typedef const OpInfo* Operator;
 
-alias Operator = const(OpInfo)*;
-
-// Maximum operator precedence
+// Maximum op precedence
 const int MAX_PREC = 16;
 
-// Comma operator precedence (least precedence)
+// Comma op precedence (least precedence)
 const int COMMA_PREC = 0;
 
-// In operator precedence
+// In op precedence
 const int IN_PREC = 9;
 
 /**
 Operator table
 */
-OpInfo[] operators = [
+OpInfo[] operators = {
 
-    // Member operator
-    { "."w, 2, 16, 'l' },
+    // Member op
+    { ".", 2, 16, 'l' },
 
     // Array indexing
-    { "["w, 1, 16, 'l' },
+    { "[", 1, 16, 'l' },
 
-    // New/constructor operator
-    { "new"w, 1, 16, 'r' },
+    // New/constructor op
+    { "new", 1, 16, 'r' },
 
     // Function call
-    { "("w, 1, 15, 'l' },
+    { "(", 1, 15, 'l' },
 
-    // Postfix unary operators
-    { "++"w, 1, 14, 'l' },
-    { "--"w, 1, 14, 'l' },
+    // Postfix unary ops
+    { "++", 1, 14, 'l' },
+    { "--", 1, 14, 'l' },
 
-    // Prefix unary operators
-    { "+"w , 1, 13, 'r' },
-    { "-"w , 1, 13, 'r' },
-    { "!"w , 1, 13, 'r' },
-    { "~"w , 1, 13, 'r' },
-    { "++"w, 1, 13, 'r' },
-    { "--"w, 1, 13, 'r' },
-    { "typeof"w, 1, 13, 'r' },
-    { "void"w, 1, 13, 'r' },
-    { "delete"w, 1, 13, 'r' },
+    // Prefix unary ops
+    { "+" , 1, 13, 'r' },
+    { "-" , 1, 13, 'r' },
+    { "!" , 1, 13, 'r' },
+    { "~" , 1, 13, 'r' },
+    { "++", 1, 13, 'r' },
+    { "--", 1, 13, 'r' },
+    { "typeof", 1, 13, 'r' },
+    { "void", 1, 13, 'r' },
+    { "delete", 1, 13, 'r' },
 
     // Multiplication/division/modulus
-    { "*"w, 2, 12, 'l' },
-    { "/"w, 2, 12, 'l', true },
-    { "%"w, 2, 12, 'l', true },
+    { "*", 2, 12, 'l' },
+    { "/", 2, 12, 'l', true },
+    { "%", 2, 12, 'l', true },
 
     // Addition/subtraction
-    { "+"w, 2, 11, 'l' },
-    { "-"w, 2, 11, 'l', true },
+    { "+", 2, 11, 'l' },
+    { "-", 2, 11, 'l', true },
 
     // Bitwise shift
-    { "<<"w , 2, 10, 'l' },
-    { ">>"w , 2, 10, 'l' },
-    { ">>>"w, 2, 10, 'l' },
+    { "<<" , 2, 10, 'l' },
+    { ">>" , 2, 10, 'l' },
+    { ">>>", 2, 10, 'l' },
 
-    // Relational operators
+    // Relational ops
     { "<"w         , 2, IN_PREC, 'l' },
     { "<="w        , 2, IN_PREC, 'l' },
     { ">"w         , 2, IN_PREC, 'l' },
     { ">="w        , 2, IN_PREC, 'l' },
     { "in"w        , 2, IN_PREC, 'l' },
-    { "instanceof"w, 2, IN_PREC, 'l' },
+    { "instanceof", 2, IN_PREC, 'l' },
 
     // Equality comparison
-    { "=="w , 2, 8, 'l' },
-    { "!="w , 2, 8, 'l' },
-    { "==="w, 2, 8, 'l' },
-    { "!=="w, 2, 8, 'l' },
+    { "==" , 2, 8, 'l' },
+    { "!=" , 2, 8, 'l' },
+    { "===", 2, 8, 'l' },
+    { "!==", 2, 8, 'l' },
 
-    // Bitwise operators
-    { "&"w, 2, 7, 'l' },
-    { "^"w, 2, 6, 'l' },
-    { "|"w, 2, 5, 'l' },
+    // Bitwise ops
+    { "&", 2, 7, 'l' },
+    { "^", 2, 6, 'l' },
+    { "|", 2, 5, 'l' },
 
-    // Logical operators
-    { "&&"w, 2, 4, 'l' },
-    { "||"w, 2, 3, 'l' },
+    // Logical ops
+    { "&&", 2, 4, 'l' },
+    { "||", 2, 3, 'l' },
 
     // Ternary conditional
-    { "?"w, 3, 2, 'r' },
+    { "?", 3, 2, 'r' },
 
     // Assignment
     { "="w   , 2, 1, 'r' },
@@ -160,89 +151,95 @@ OpInfo[] operators = [
     { "&="w  , 2, 1, 'r' },
     { "|="w  , 2, 1, 'r' },
     { "^="w  , 2, 1, 'r' },
-    { "<<="w , 2, 1, 'r' },
-    { ">>="w , 2, 1, 'r' },
-    { ">>>="w, 2, 1, 'r' },
+    { "<<=" , 2, 1, 'r' },
+    { ">>=" , 2, 1, 'r' },
+    { ">>>=", 2, 1, 'r' },
 
     // Comma (sequencing), least precedence
-    { ","w, 2, COMMA_PREC, 'l' },
-];
+    { ",", 2, COMMA_PREC, 'l' },
+};
+
+#define NUM_OPERATORS sizeof(operators)/sizeof(operators[0])
 
 /**
 Separator tokens
 */
-wstring[] separators = [
-    ","w,
-    ":"w,
-    ";"w,
-    "("w,
-    ")"w,
-    "["w,
-    "]"w,
-    "{"w,
-    "}"w
-];
+std::string[] separators = {
+    ",",
+    ":",
+    ";",
+    "(",
+    ")",
+    "[",
+    "]",
+    "{",
+    "}"
+};
+
+#define NUM_SEPARATORS sizeof(separators)/sizeof(separators[0])
 
 /**
 Keyword tokens
 */
-wstring [] keywords = [
-    "var"w,
-    "function"w,
-    "if"w,
-    "else"w,
-    "do"w,
-    "while"w,
-    "for"w,
-    "break"w,
-    "continue"w,
-    "return"w,
-    "switch"w,
-    "case"w,
-    "default"w,
-    "throw"w,
-    "try"w,
-    "catch"w,
-    "finally"w,
-    "true"w,
-    "false"w,
-    "null"w
-];
+std::string[] keywords = {
+    "var",
+    "function",
+    "if",
+    "else",
+    "do",
+    "while",
+    "for",
+    "break",
+    "continue",
+    "return",
+    "switch",
+    "case",
+    "default",
+    "throw",
+    "try",
+    "catch",
+    "finally",
+    "true",
+    "false",
+    "null"
+};
+
+#define NUM_KEYWORDS sizeof(keywords)/sizeof(keywords[0])
 
 /**
 Static module constructor to initialize the
-separator, keyword and operator tables
+separator, keyword and op tables
 */
-static this()
+void init()
 {
     // Sort the tables by decreasing string length
-    sort!("a.str.length > b.str.length")(operators);
-    sort!("a.length > b.length")(separators);
-    sort!("a.length > b.length")(keywords);
+    std::sort(operators, operators + NUM_OPERATORS, [](OpInfo a, OpInfo b) { return a.str.size() > b.str.size(); });
+    std::sort(separators, separators + NUM_SEPARATORS, [](std::string a, std::string b) { return a.size() > b.size() });
+    std::sort(keywords, keywords + NUM_KEYWORDS, [](std::string a, std::string b) { return a.size() > b.size() });
 }
 
 /**
-Find an operator by string, arity and associativity
+Find an op by string, arity and associativity
 */
-Operator findOperator(wstring op, int arity = 0, char assoc = '\0')
+Operator findOperator(std::string op, int arity = 0, char assoc = '\0')
 {
-    for (size_t i = 0; i < operators.length; ++i)
+    for (size_t i = 0; i < NUM_OPERATORS; ++i)
     {
-        Operator operator = &operators[i];
+        Operator op = &operators[i];
 
-        if (operator.str != op)
+        if (op.str != op)
             continue;
 
-        if (arity != 0 && operator.arity != arity)
+        if (arity != 0 && op.arity != arity)
             continue;
 
-        if (assoc != '\0' && operator.assoc != assoc)
+        if (assoc != '\0' && op.assoc != assoc)
             continue;
 
-        return operator;
+        return op;
     }
 
-    return null;
+    return nullptr;
 }
 
 /**
@@ -281,7 +278,7 @@ String stream, used to lex from strings
 struct StrStream
 {
     /// Input string
-    wstring str;
+    std::string str;
 
     /// File name
     string file;
@@ -295,7 +292,7 @@ struct StrStream
     /// Current column
     int col = 1;
 
-    this(wstring str, string file)
+    this(std::string str, string file)
     {
         this.str = str;
         this.file = file;
@@ -329,7 +326,7 @@ struct StrStream
     }
 
     /// Test for a match with a given string, the string is consumed if matched
-    bool match(wstring str)
+    bool match(std::string str)
     {
         if (index + str.length > this.str.length)
             return false;
@@ -388,7 +385,7 @@ bool identPart(wchar ch)
     return identStart(ch) || digit(ch);
 }
 
-bool ident(wstring str)
+bool ident(std::string str)
 {
     if (str.length is 0 || !identStart(str[0]))
         return false;
@@ -428,8 +425,8 @@ struct Token
     {
         long intVal;
         double floatVal;
-        wstring stringVal;
-        struct { wstring regexpVal; wstring flagsVal; }
+        std::string stringVal;
+        struct { std::string regexpVal; std::string flagsVal; }
     }
 
     /// Source position
@@ -453,7 +450,7 @@ struct Token
         this.pos = pos;
     }
 
-    this(Type type, wstring val, SrcPos pos)
+    this(Type type, std::string val, SrcPos pos)
     {
         assert (
             type == OP      ||
@@ -469,7 +466,7 @@ struct Token
         this.pos = pos;
     }
 
-    this(Type type, wstring re, wstring flags, SrcPos pos)
+    this(Type type, std::string re, std::string flags, SrcPos pos)
     {
         assert (type == REGEXP);
 
@@ -492,7 +489,7 @@ struct Token
         switch (type)
         {
 
-            case OP:        return format("operator:%s"  , stringVal);
+            case OP:        return format("op:%s"  , stringVal);
             case SEP:       return format("separator:%s" , stringVal);
             case IDENT:     return format("identifier:%s", stringVal);
             case KEYWORD:   return format("keyword:%s"   , stringVal);
@@ -520,7 +517,7 @@ Lexer error exception
 */
 class LexError : Error
 {
-    this(wstring msg, SrcPos pos)
+    this(std::string msg, SrcPos pos)
     {
         this.msg = msg;
         this.pos = pos;
@@ -528,7 +525,7 @@ class LexError : Error
         super(to!string(msg));
     }
 
-    wstring msg;
+    std::string msg;
     SrcPos pos;
 }
 
@@ -719,7 +716,7 @@ Token getToken(ref StrStream stream, LexFlags flags)
     {
         auto openChar = stream.readCh();
 
-        wstring str = "";
+        std::string str = "";
 
         // Until the end of the string
         for (;;)
@@ -778,7 +775,7 @@ Token getToken(ref StrStream stream, LexFlags flags)
         // Read the opening ` character
         auto openChar = stream.readCh();
 
-        wstring str = "";
+        std::string str = "";
 
         // Until the end of the string
         for (;;)
@@ -828,7 +825,7 @@ Token getToken(ref StrStream stream, LexFlags flags)
     if (identStart(ch))
     {
         stream.readCh();
-        wstring identStr = ""w ~ ch;
+        std::string identStr = ""w ~ ch;
 
         for (;;)
         {
@@ -843,7 +840,7 @@ Token getToken(ref StrStream stream, LexFlags flags)
         if (countUntil(keywords, identStr) != -1)
             return Token(Token.KEYWORD, identStr, pos);
 
-        // Try matching all operators
+        // Try matching all ops
         foreach (op; operators)
             if (identStr == op.str)
                 return Token(Token.OP, identStr, pos);
@@ -858,7 +855,7 @@ Token getToken(ref StrStream stream, LexFlags flags)
         stream.readCh();
 
         // Read the pattern
-        wstring reStr = "";
+        std::string reStr = "";
         for (;;)
         {
             ch = stream.readCh();
@@ -899,7 +896,7 @@ Token getToken(ref StrStream stream, LexFlags flags)
         }
 
         // Read the flags
-        wstring reFlags = "";
+        std::string reFlags = "";
         for (;;)
         {
             ch = stream.peekCh();
@@ -921,20 +918,20 @@ Token getToken(ref StrStream stream, LexFlags flags)
         if (stream.match(sep))
             return Token(Token.SEP, sep, pos);
 
-    // Try matching all operators
+    // Try matching all ops
     foreach (op; operators)
         if (stream.match(op.str))
             return Token(Token.OP, op.str, pos);
 
     // Invalid character
     int charVal = stream.readCh();
-    wstring charStr;
+    std::string charStr;
     if (charVal >= 33 && charVal <= 126)
         charStr ~= "'"w ~ cast(wchar)charVal ~ "', "w;
-    charStr ~= to!wstring(format("0x%04x", charVal));
+    charStr ~= to!std::string(format("0x%04x", charVal));
     return Token(
         Token.ERROR,
-        "unexpected character ("w ~ charStr ~ ")"w, 
+        "unexpected character ("w ~ charStr ~ ")", 
         pos
     );
 }
@@ -1043,19 +1040,19 @@ class TokenStream
         return nlPresent;
     }
 
-    bool peekKw(wstring keyword)
+    bool peekKw(std::string keyword)
     {
         auto t = peek();
         return (t.type == Token.KEYWORD && t.stringVal == keyword);
     }
 
-    bool peekSep(wstring sep)
+    bool peekSep(std::string sep)
     {
         auto t = peek();
         return (t.type == Token.SEP && t.stringVal == sep);
     }
 
-    bool matchKw(wstring keyword)
+    bool matchKw(std::string keyword)
     {
         if (peekKw(keyword) == false)
             return false;
@@ -1064,7 +1061,7 @@ class TokenStream
         return true;
     }
 
-    bool matchSep(wstring sep)
+    bool matchSep(std::string sep)
     {
         if (peekSep(sep) == false)
             return false;
@@ -1078,4 +1075,6 @@ class TokenStream
         return peek().type == Token.EOF;
     }
 }
+
+} // namespace almond
 
