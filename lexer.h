@@ -37,6 +37,9 @@
 
 #include <string>
 #include <algorithm> // for sort
+#include <regex>
+
+#include <assert.h>
 
 namespace almond {
 
@@ -245,10 +248,10 @@ Operator findOperator(std::string op, int arity = 0, char assoc = '\0')
 /**
 Source code position
 */
-class SrcPos
+struct SrcPos
 {
     /// File name
-    string file;
+    std::string file;
 
     /// Line number
     int line;
@@ -256,19 +259,16 @@ class SrcPos
     /// Column number
     int col;
 
-    this(string file, int line, int col)
+    SrcPos(std::string file_, int line_, int col_)
     {
-        if (file is null)
-            file = "";
-
-        this.file = file;
-        this.line = line;
-        this.col = col;
+        file = file_;
+        line = line_;
+        col = col_;
     }
 
-    override string toString()
+    std::string toString()
     {
-        return format("\"%s\"@%d:%d", file, line, col);
+        return "TODO"; // format("\"%s\"@%d:%d", file, line, col);
     }
 }
 
@@ -278,30 +278,32 @@ String stream, used to lex from strings
 struct StrStream
 {
     /// Input string
-    std::string str;
+    char* str;
+    int strLen;
 
     /// File name
-    string file;
+    std::string file;
 
     // Current index
-    int index = 0;
+    int index;
 
     /// Current line number
-    int line = 1;
+    int line;
 
     /// Current column
-    int col = 1;
+    int col;
 
-    this(std::string str, string file)
+    StrStream(char* str_, std::string file_) : index(0), line(1), col(1)
     {
-        this.str = str;
-        this.file = file;
+        str = str_;
+        strLen = strlen(str);
+        file = file_;
     }
 
     /// Read a character and advance the current index
-    auto readCh()
+    char readCh()
     {
-        wchar ch = (index < str.length)? str[index]:'\0';
+        char ch = (index < strLen) ? str[index] : '\0';
 
         index++;
 
@@ -319,35 +321,36 @@ struct StrStream
     }
 
     /// Read a character without advancing the index
-    auto peekCh(size_t ofs = 0)
+    char peekCh(size_t ofs = 0)
     {
-        wchar ch = (index + ofs < str.length)? str[index + ofs]:'\0';
+        char ch = (index + ofs < strLen) ? str[index + ofs] : '\0';
         return ch;
     }
 
     /// Test for a match with a given string, the string is consumed if matched
-    bool match(std::string str)
+    bool match(char *str_)
     {
-        if (index + str.length > this.str.length)
+        if (index + strLen > strLen)
             return false;
 
-        if (str != this.str[index .. index+str.length])
+        if (strncmp(str_, str+index, strlen(str_)))
             return false;
 
         // Consume the characters
-        for (int i = 0; i < str.length; ++i)
+        for (int i = 0; i < strLen; ++i)
             readCh();
 
         return true;
     }
 
     /// Test for a match with a regupar expression
-    auto match(StaticRegex!(wchar) re)
+    std::smatch match(std::regex re)
     {
-        auto m = std.regex.match(str[index .. str.length], re);
+        auto m = std::sregex_iterator(str + index, str + strLen, re);
+        auto end = std::sregex_iterator();
 
-        if (m.captures.empty == false)
-            for (int i = 0; i < m.captures[0].length; ++i)
+        for (auto i : m) {
+            for (int i = 0; i < *i.size(); ++i)
                 readCh();
 
         return m;
@@ -360,39 +363,40 @@ struct StrStream
     }
 }
 
-bool whitespace(wchar ch)
+bool whitespace(char ch)
 {
     return (ch == '\r' || ch == '\n' || ch == ' ' || ch == '\t');
 }
 
-bool alpha(wchar ch)
+bool alpha(char ch)
 {
     return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
 }
 
-bool digit(wchar ch)
+bool digit(char ch)
 {
     return (ch >= '0' && ch <= '9');
 }
 
-bool identStart(wchar ch)
+bool identStart(char ch)
 {
     return alpha(ch) || ch == '_' || ch == '$';
 }
 
-bool identPart(wchar ch)
+bool identPart(char ch)
 {
     return identStart(ch) || digit(ch);
 }
 
-bool ident(std::string str)
+bool ident(char* str)
 {
-    if (str.length is 0 || !identStart(str[0]))
+    if (str[0] == 0 || !identStart(str[0]))
         return false;
 
-    foreach (ch; str[1..$])
-        if (!identPart(ch))
+    while (*str) {
+      if (!identPart(ch))
             return false;
+    }
 
     return true;
 }
@@ -402,8 +406,7 @@ Source token value
 */
 struct Token
 {
-    alias Type = int;
-    enum : Type
+    enum Type
     {
         OP,
         SEP,
@@ -432,60 +435,62 @@ struct Token
     /// Source position
     SrcPos pos;
 
-    this(Type type, long val, SrcPos pos)
+    Token(Type type_, long val_, SrcPos pos_)
     {
-        assert (type == INT);
+        assert (type_ == INT);
 
-        this.type = type;
-        this.intVal = val;
-        this.pos = pos;
+        type = type_;
+        intVal = val_;
+        pos = pos_;
     }
 
-    this(Type type, double val, SrcPos pos)
+    Token(Type type_, double val_, SrcPos pos_)
     {
-        assert (type == FLOAT);
+        assert (type_ == FLOAT);
 
-        this.type = type;
-        this.floatVal = val;
-        this.pos = pos;
+        type = type_;
+        floatVal = val_;
+        pos = pos_;
     }
 
-    this(Type type, std::string val, SrcPos pos)
+    Token(Type type_, std::string val_, SrcPos pos_)
     {
         assert (
-            type == OP      ||
-            type == SEP     ||
-            type == IDENT   ||
-            type == KEYWORD ||
-            type == STRING  ||
-            type == ERROR
+            type_ == OP      ||
+            type_ == SEP     ||
+            type_ == IDENT   ||
+            type_ == KEYWORD ||
+            type_ == STRING  ||
+            type_ == ERROR
         );
 
-        this.type = type;
-        this.stringVal = val;
-        this.pos = pos;
+        type = type_;
+        stringVal = val_;
+        pos = pos_;
     }
 
-    this(Type type, std::string re, std::string flags, SrcPos pos)
+    Token(Type type_, std::string re_, std::string flags_, SrcPos pos_)
     {
-        assert (type == REGEXP);
+        assert_ (type == REGEXP);
 
-        this.type = type;
-        this.regexpVal = re;
-        this.flagsVal = flags;
-        this.pos = pos;
+        type = type_;
+        regexpVal = re_;
+        flagsVal = flags_;
+        pos = pos_;
     }
 
-    this(Type type, SrcPos pos)
+    Token(Type_ type_, SrcPos pos_)
     {
         assert (type == EOF);
 
-        this.type = type;
-        this.pos = pos;
+        type = type_;
+        pos = pos_;
     }
 
-    string toString()
+    std::string toString()
     {
+        return "TODO: Token";
+        /*
         switch (type)
         {
 
@@ -503,37 +508,23 @@ struct Token
             default:
             return "token";
         }
+        */
     }
 }
 
 /**
 Lexer flags, used to parameterize lexical analysis
 */
-alias LexFlags = uint;
+typedef unsigned int LexFlags;
 const LexFlags LEX_MAYBE_RE = 1 << 0;
-
-/**
-Lexer error exception
-*/
-class LexError : Error
-{
-    this(std::string msg, SrcPos pos)
-    {
-        this.msg = msg;
-        this.pos = pos;
-
-        super(to!string(msg));
-    }
-
-    std::string msg;
-    SrcPos pos;
-}
 
 /**
 Read a character escape sequence
 */
-int readEscape(ref StrStream stream)
+int readEscape(StrStream& stream)
 {
+    assert(0);
+    /*
     // Hexadecimal escape sequence regular expressions
     enum hexRegex = ctRegex!(`^x([0-9|a-f|A-F]{2})`w);
     enum uniRegex = ctRegex!(`^u([0-9|a-f|A-F]{4})`w);
@@ -590,6 +581,7 @@ int readEscape(ref StrStream stream)
         default:
         return code;
     }
+    */
 }
 
 /**
@@ -597,7 +589,7 @@ Get the first token from a stream
 */
 Token getToken(ref StrStream stream, LexFlags flags)
 {
-    wchar ch;
+    char ch;
 
     // Consume whitespace and comments
     for (;;)
@@ -927,7 +919,7 @@ Token getToken(ref StrStream stream, LexFlags flags)
     int charVal = stream.readCh();
     std::string charStr;
     if (charVal >= 33 && charVal <= 126)
-        charStr ~= "'"w ~ cast(wchar)charVal ~ "', "w;
+        charStr ~= "'"w ~ cast(char)charVal ~ "', "w;
     charStr ~= to!std::string(format("0x%04x", charVal));
     return Token(
         Token.ERROR,
@@ -964,10 +956,10 @@ class TokenStream
     */
     this(StrStream strStream)
     {
-        this.preStream = strStream;
+        preStream = strStream;
 
-        this.tokenAvail = false;
-        this.nlPresent = false;
+        tokenAvail = false;
+        nlPresent = false;
     }
 
     /**
@@ -976,13 +968,13 @@ class TokenStream
     this(TokenStream that)
     {
         // Copy the string streams
-        this.preStream = that.preStream;
-        this.postStream = that.postStream;
+        preStream = that.preStream;
+        postStream = that.postStream;
 
-        this.nlPresent = that.nlPresent;
-        this.nextToken = that.nextToken;
-        this.tokenAvail = that.tokenAvail;
-        this.lexFlags = that.lexFlags;
+        nlPresent = that.nlPresent;
+        nextToken = that.nextToken;
+        tokenAvail = that.tokenAvail;
+        lexFlags = that.lexFlags;
     }
 
     /**
@@ -991,13 +983,13 @@ class TokenStream
     void backtrack(TokenStream that)
     {
         // Copy the string streams
-        this.preStream = that.preStream;
-        this.postStream = that.postStream;
+        preStream = that.preStream;
+        postStream = that.postStream;
 
-        this.nlPresent = that.nlPresent;
-        this.nextToken = that.nextToken;
-        this.tokenAvail = that.tokenAvail;
-        this.lexFlags = that.lexFlags;
+        nlPresent = that.nlPresent;
+        nextToken = that.nextToken;
+        tokenAvail = that.tokenAvail;
+        lexFlags = that.lexFlags;
     }
 
     SrcPos getPos()
@@ -1007,7 +999,7 @@ class TokenStream
 
     Token peek(LexFlags lexFlags = 0)
     {
-        if (tokenAvail is false || this.lexFlags != lexFlags)
+        if (tokenAvail is false || lexFlags != lexFlags)
         {
             postStream = preStream;
             nextToken = getToken(postStream, lexFlags);
