@@ -931,10 +931,10 @@ Token stream, to simplify parsing
 struct TokenStream
 {
     /// String stream before the next token
-    StrStream preStream;
+    StrStream* preStream;
 
     /// String stream after the next token
-    StrStream postStream;
+    StrStream* postStream;
 
     /// Flag indicating a newline occurs before the next token
     bool nlPresent;
@@ -951,7 +951,7 @@ struct TokenStream
     /**
     Constructor to tokenize a string stream
     */
-    TokenStream(StrStream strStream)
+    TokenStream(StrStream* strStream)
     {
         preStream = strStream;
 
