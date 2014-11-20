@@ -40,6 +40,7 @@
 #include <regex>
 
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 
 namespace almond {
@@ -60,6 +61,9 @@ struct OpInfo
 
     /// Associativity, left-to-right or right-to-left
     char assoc;
+
+    /// Non-associative flag (e.g.: - and / are not associative)
+    bool nonAssoc;
 };
 
 typedef const OpInfo* Operator;
@@ -76,91 +80,91 @@ const int IN_PREC = 9;
 /**
 Operator table
 */
-OpInfo[] operators = {
+OpInfo operators[] = {
 
     // Member op
-    { ".", 2, 16, 'l' },
+    { ".", 2, 16, 'l', false },
 
     // Array indexing
-    { "[", 1, 16, 'l' },
+    { "[", 1, 16, 'l', false },
 
     // New/constructor op
-    { "new", 1, 16, 'r' },
+    { "new", 1, 16, 'r', false },
 
     // Function call
-    { "(", 1, 15, 'l' },
+    { "(", 1, 15, 'l', false },
 
     // Postfix unary ops
-    { "++", 1, 14, 'l' },
-    { "--", 1, 14, 'l' },
+    { "++", 1, 14, 'l', false },
+    { "--", 1, 14, 'l', false },
 
     // Prefix unary ops
-    { "+" , 1, 13, 'r' },
-    { "-" , 1, 13, 'r' },
-    { "!" , 1, 13, 'r' },
-    { "~" , 1, 13, 'r' },
-    { "++", 1, 13, 'r' },
-    { "--", 1, 13, 'r' },
-    { "typeof", 1, 13, 'r' },
-    { "void", 1, 13, 'r' },
-    { "delete", 1, 13, 'r' },
+    { "+" , 1, 13, 'r', false },
+    { "-" , 1, 13, 'r', false },
+    { "!" , 1, 13, 'r', false },
+    { "~" , 1, 13, 'r', false },
+    { "++", 1, 13, 'r', false },
+    { "--", 1, 13, 'r', false },
+    { "typeof", 1, 13, 'r', false },
+    { "void", 1, 13, 'r', false },
+    { "delete", 1, 13, 'r', false },
 
     // Multiplication/division/modulus
-    { "*", 2, 12, 'l' },
+    { "*", 2, 12, 'l', false },
     { "/", 2, 12, 'l', true },
     { "%", 2, 12, 'l', true },
 
     // Addition/subtraction
-    { "+", 2, 11, 'l' },
+    { "+", 2, 11, 'l', false },
     { "-", 2, 11, 'l', true },
 
     // Bitwise shift
-    { "<<" , 2, 10, 'l' },
-    { ">>" , 2, 10, 'l' },
-    { ">>>", 2, 10, 'l' },
+    { "<<" , 2, 10, 'l', false },
+    { ">>" , 2, 10, 'l', false },
+    { ">>>", 2, 10, 'l', false },
 
     // Relational ops
-    { "<"w         , 2, IN_PREC, 'l' },
-    { "<="w        , 2, IN_PREC, 'l' },
-    { ">"w         , 2, IN_PREC, 'l' },
-    { ">="w        , 2, IN_PREC, 'l' },
-    { "in"w        , 2, IN_PREC, 'l' },
-    { "instanceof", 2, IN_PREC, 'l' },
+    { "<"         , 2, IN_PREC, 'l', false },
+    { "<="        , 2, IN_PREC, 'l', false },
+    { ">"         , 2, IN_PREC, 'l', false },
+    { ">="        , 2, IN_PREC, 'l', false },
+    { "in"        , 2, IN_PREC, 'l', false },
+    { "instanceof", 2, IN_PREC, 'l', false },
 
     // Equality comparison
-    { "==" , 2, 8, 'l' },
-    { "!=" , 2, 8, 'l' },
-    { "===", 2, 8, 'l' },
-    { "!==", 2, 8, 'l' },
+    { "==" , 2, 8, 'l', false },
+    { "!=" , 2, 8, 'l', false },
+    { "===", 2, 8, 'l', false },
+    { "!==", 2, 8, 'l', false },
 
     // Bitwise ops
-    { "&", 2, 7, 'l' },
-    { "^", 2, 6, 'l' },
-    { "|", 2, 5, 'l' },
+    { "&", 2, 7, 'l', false },
+    { "^", 2, 6, 'l', false },
+    { "|", 2, 5, 'l', false },
 
     // Logical ops
-    { "&&", 2, 4, 'l' },
-    { "||", 2, 3, 'l' },
+    { "&&", 2, 4, 'l', false },
+    { "||", 2, 3, 'l', false },
 
     // Ternary conditional
-    { "?", 3, 2, 'r' },
+    { "?", 3, 2, 'r', false },
 
     // Assignment
-    { "="w   , 2, 1, 'r' },
-    { "+="w  , 2, 1, 'r' },
-    { "-="w  , 2, 1, 'r' },
-    { "*="w  , 2, 1, 'r' },
-    { "/="w  , 2, 1, 'r' },
-    { "%="w  , 2, 1, 'r' },
-    { "&="w  , 2, 1, 'r' },
-    { "|="w  , 2, 1, 'r' },
-    { "^="w  , 2, 1, 'r' },
-    { "<<=" , 2, 1, 'r' },
-    { ">>=" , 2, 1, 'r' },
-    { ">>>=", 2, 1, 'r' },
+    { "="   , 2, 1, 'r', false },
+    { "+="  , 2, 1, 'r', false },
+    { "-="  , 2, 1, 'r', false },
+    { "*="  , 2, 1, 'r', false },
+    { "/="  , 2, 1, 'r', false },
+    { "%="  , 2, 1, 'r', false },
+    { "&="  , 2, 1, 'r', false },
+    { "|="  , 2, 1, 'r', false },
+    { "^="  , 2, 1, 'r', false },
+    { "<<=" , 2, 1, 'r', false },
+    { ">>=" , 2, 1, 'r', false },
+    { ">>>=", 2, 1, 'r', false },
 
     // Comma (sequencing), least precedence
-    { ",", 2, COMMA_PREC, 'l' },
+    { ",", 2, COMMA_PREC, 'l', false },
 };
 
 #define NUM_OPERATORS sizeof(operators)/sizeof(operators[0])
@@ -168,7 +172,7 @@ OpInfo[] operators = {
 /**
 Separator tokens
 */
-std::string[] separators = {
+std::string separators[] = {
     ",",
     ":",
     ";",
@@ -185,7 +189,7 @@ std::string[] separators = {
 /**
 Keyword tokens
 */
-std::string[] keywords = {
+std::string keywords[] = {
     "var",
     "function",
     "if",
@@ -218,8 +222,8 @@ void init()
 {
     // Sort the tables by decreasing string length
     std::sort(operators, operators + NUM_OPERATORS, [](OpInfo a, OpInfo b) { return a.str.size() > b.str.size(); });
-    std::sort(separators, separators + NUM_SEPARATORS, [](std::string a, std::string b) { return a.size() > b.size() });
-    std::sort(keywords, keywords + NUM_KEYWORDS, [](std::string a, std::string b) { return a.size() > b.size() });
+    std::sort(separators, separators + NUM_SEPARATORS, [](std::string a, std::string b) { return a.size() > b.size(); });
+    std::sort(keywords, keywords + NUM_KEYWORDS, [](std::string a, std::string b) { return a.size() > b.size(); });
 }
 
 /**
@@ -229,18 +233,18 @@ Operator findOperator(std::string op, int arity = 0, char assoc = '\0')
 {
     for (size_t i = 0; i < NUM_OPERATORS; ++i)
     {
-        Operator op = &operators[i];
+        Operator operator_ = &operators[i];
 
-        if (op.str != op)
+        if (operator_->str != op)
             continue;
 
-        if (arity != 0 && op.arity != arity)
+        if (arity != 0 && operator_->arity != arity)
             continue;
 
-        if (assoc != '\0' && op.assoc != assoc)
+        if (assoc != '\0' && operator_->assoc != assoc)
             continue;
 
-        return op;
+        return operator_;
     }
 
     return nullptr;
@@ -271,7 +275,7 @@ struct SrcPos
     {
         return "TODO"; // format("\"%s\"@%d:%d", file, line, col);
     }
-}
+};
 
 /**
 String stream, used to lex from strings
@@ -347,22 +351,25 @@ struct StrStream
     /// Test for a match with a regupar expression
     std::smatch match(std::regex re)
     {
-        auto m = std::sregex_iterator(str + index, str + strLen, re);
-        auto end = std::sregex_iterator();
-
-        for (auto i : m) {
-            for (int i = 0; i < *i.size(); ++i)
-                readCh();
-
+        std::smatch m;
+        if (std::regex_search(std::string(str), m, re))
+        {
+            for (auto it : m)
+            {
+                for (int i = 0; i < it.length(); ++i)
+                    readCh();
+            }
+        }
         return m;
     }
 
     /// Get a position object for the current index
-    SrcPos getPos()
+    SrcPos* getPos()
     {
-        return new SrcPos(file, line, col);
+        return new SrcPos(file, line, col); // XXX leak
     }
-}
+};
+
 
 bool whitespace(char ch)
 {
@@ -395,8 +402,9 @@ bool ident(char* str)
         return false;
 
     while (*str) {
-      if (!identPart(ch))
+      if (!identPart(*str))
             return false;
+      str++;
     }
 
     return true;
@@ -417,9 +425,9 @@ struct Token
         FLOAT,
         STRING,
         REGEXP,
-        EOF,
+        EOFF,
         ERROR
-    }
+    };
 
     /// Token type
     Type type;
@@ -430,31 +438,26 @@ struct Token
         long intVal;
         double floatVal;
         std::string stringVal;
-        struct { std::string regexpVal; std::string flagsVal; }
-    }
+        struct {
+            std::string regexpVal;
+            std::string flagsVal;
+        };
+    };
 
     /// Source position
     SrcPos pos;
 
-    Token(Type type_, long val_, SrcPos pos_)
+    Token(Type type_, long val_, SrcPos pos_) : type(type_), intVal(val_), pos(pos_)
     {
         assert (type_ == INT);
-
-        type = type_;
-        intVal = val_;
-        pos = pos_;
     }
 
-    Token(Type type_, double val_, SrcPos pos_)
+    Token(Type type_, double val_, SrcPos pos_) : type(type_), floatVal(val_), pos(pos_)
     {
         assert (type_ == FLOAT);
-
-        type = type_;
-        floatVal = val_;
-        pos = pos_;
     }
 
-    Token(Type type_, std::string val_, SrcPos pos_)
+    Token(Type type_, std::string val_, SrcPos pos_) : type(type_), stringVal(val_), pos(pos_)
     {
         assert (
             type_ == OP      ||
@@ -464,28 +467,16 @@ struct Token
             type_ == STRING  ||
             type_ == ERROR
         );
-
-        type = type_;
-        stringVal = val_;
-        pos = pos_;
     }
 
-    Token(Type type_, std::string re_, std::string flags_, SrcPos pos_)
+    Token(Type type_, std::string re_, std::string flags_, SrcPos pos_) : type(type_), regexpVal(re_), flagsVal(flags_), pos(pos_)
     {
-        assert_ (type == REGEXP);
-
-        type = type_;
-        regexpVal = re_;
-        flagsVal = flags_;
-        pos = pos_;
+        assert (type == REGEXP);
     }
 
-    Token(Type_ type_, SrcPos pos_)
+    Token(Type type_, SrcPos pos_) : type(type_), pos(pos_)
     {
-        assert (type == EOF);
-
-        type = type_;
-        pos = pos_;
+        assert (type == EOFF);
     }
 
     std::string toString()
@@ -504,14 +495,14 @@ struct Token
             case STRING:    return format("string:%s"    , stringVal);
             case REGEXP:    return format("regexp:/%s/%s", regexpVal, flagsVal);
             case ERROR:     return format("error:%s"     , stringVal);
-            case EOF:       return "EOF";
+            case EOFF:       return "EOFF";
 
             default:
             return "token";
         }
         */
     }
-}
+};
 
 /**
 Lexer flags, used to parameterize lexical analysis
@@ -623,7 +614,7 @@ Token getToken(StrStream& stream, LexFlags flags)
                     break;
                 if (stream.peekCh() == '\0')
                     return Token(
-                        Token.ERROR,
+                        Token::ERROR,
                         "end of stream in multi-line comment", 
                         stream.getPos()
                     );
@@ -653,7 +644,7 @@ Token getToken(StrStream& stream, LexFlags flags)
             if (m.empty)
             {
                 return Token(
-                    Token.ERROR,
+                    Token::ERROR,
                     "invalid hex number", 
                     pos
                 );
@@ -725,7 +716,7 @@ Token getToken(StrStream& stream, LexFlags flags)
             else if (ch == '\0')
             {
                 return Token(
-                    Token.ERROR,
+                    Token::ERROR,
                     "EOF in string literal",
                     stream.getPos()
                 );
@@ -735,7 +726,7 @@ Token getToken(StrStream& stream, LexFlags flags)
             else if (ch == '\n')
             {
                 return Token(
-                    Token.ERROR,
+                    Token::ERROR,
                     "newline in string literal",
                     stream.getPos()
                 );
@@ -784,7 +775,7 @@ Token getToken(StrStream& stream, LexFlags flags)
             else if (ch == '\0')
             {
                 return Token(
-                    Token.ERROR,
+                    Token::ERROR,
                     "EOF in string literal",
                     stream.getPos()
                 );
@@ -811,14 +802,14 @@ Token getToken(StrStream& stream, LexFlags flags)
     // End of file
     if (ch == '\0')
     {
-        return Token(Token.EOF, pos);
+        return Token(Token.EOFF, pos);
     }
 
     // Identifier or keyword
     if (identStart(ch))
     {
         stream.readCh();
-        std::string identStr = ""w ~ ch;
+        std::string identStr = ch;
 
         for (;;)
         {
@@ -861,14 +852,14 @@ Token getToken(StrStream& stream, LexFlags flags)
                 if (stream.peekCh() == '/')
                 {
                     stream.readCh();
-                    reStr += "\\/"w;
+                    reStr += "\\/";
                     continue;
                 }
 
                 if (stream.peekCh() == '\\')
                 {
                     stream.readCh();
-                    reStr += "\\\\"w;
+                    reStr += "\\\\";
                     continue;
                 }
             }
@@ -882,7 +873,7 @@ Token getToken(StrStream& stream, LexFlags flags)
             // End of file
             if (ch == '\0')
             {
-                return Token(Token.ERROR, "EOF in literal", stream.getPos());
+                return Token(Token::ERROR, "EOF in literal", stream.getPos());
             }
 
             reStr += ch;
@@ -922,10 +913,10 @@ Token getToken(StrStream& stream, LexFlags flags)
     int charVal = stream.readCh();
     std::string charStr;
     if (charVal >= 33 && charVal <= 126)
-        charStr += "'"w ~ cast(char)charVal ~ "', "w;
+        charStr += "'"w ~ cast(char)charVal ~ "', ";
     charStr += to!std::string(format("0x%04x", charVal));
     return Token(
-        Token.ERROR,
+        Token::ERROR,
         "unexpected character ("w ~ charStr ~ ")", 
         pos
     );
@@ -1019,7 +1010,7 @@ struct TokenStream
         auto t = peek(flags);
 
         // Cannot read the last (EOF) token
-        assert (t.type != Token.EOF, "cannot read final EOF token");
+        assert (t.type != Token.EOFF, "cannot read final EOF token");
 
         // Read the token
         preStream = postStream;
@@ -1068,7 +1059,7 @@ struct TokenStream
 
     bool eof()
     {
-        return peek().type == Token.EOF;
+        return peek().type == Token.EOFF;
     }
 }
 
