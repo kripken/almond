@@ -39,6 +39,7 @@
 #include <algorithm> // for sort
 #include <regex>
 
+#include <stdlib.h>
 #include <assert.h>
 
 namespace almond {
@@ -587,7 +588,7 @@ int readEscape(StrStream& stream)
 /**
 Get the first token from a stream
 */
-Token getToken(ref StrStream stream, LexFlags flags)
+Token getToken(StrStream& stream, LexFlags flags)
 {
     char ch;
 
@@ -641,12 +642,12 @@ Token getToken(ref StrStream stream, LexFlags flags)
     SrcPos pos = stream.getPos();
 
     // Number (starting with a digit or .nxx)
-    if (digit(ch) || (ch is '.' && digit(stream.peekCh(1))))
+    if (digit(ch) || (ch == '.' && digit(stream.peekCh(1))))
     {
         // Hexadecimal number
         if (stream.match("0x"))
         {
-            enum hexRegex = ctRegex!(`^[0-9|a-f|A-F]+`w);
+            static std::regex hexRegex("^[0-9|a-f|A-F]+");
             auto m = stream.match(hexRegex);
 
             if (m.empty)
@@ -658,9 +659,9 @@ Token getToken(ref StrStream stream, LexFlags flags)
                 );
             }
 
-            auto hexStr = m.captures[0];
+            auto hexStr = m[0];
             long val;
-            formattedRead(hexStr, "%x", &val);
+            scanf(hexStr.c_str(), "%x", &val);
 
             return Token(Token.INT, val, pos);
         }
@@ -668,37 +669,37 @@ Token getToken(ref StrStream stream, LexFlags flags)
         // Octal number
         if (ch == '0')
         {
-            enum octRegex = ctRegex!(`^0([0-7]+)`w);
+            static std::regex octRegex("^0([0-7]+)");
 
             auto m = stream.match(octRegex);
             if (!m.empty)
             {
-                auto octStr = m.captures[1];
+                auto octStr = m[1];
                 long val;
-                formattedRead(octStr, "%o", &val);
+                scanf(octStr, "%o", &val);
                 return Token(Token.INT, val, pos);
             }
         }
 
-        enum fpRegex = ctRegex!(`^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?`w);
+        static std::regex fpRegex("^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?");
 
         auto m = stream.match(fpRegex);
         assert (m.empty == false);
-        auto numStr = m.captures[0];
+        auto numStr = m[0];
 
         // If this is a floating-point number
         if (countUntil(numStr, '.') != -1 ||
             countUntil(numStr, 'e') != -1 ||
             countUntil(numStr, 'E') != -1)
         {
-            double val = to!(double)(numStr);
+            double val = atof(numStr);
             return Token(Token.FLOAT, val, pos);
         }
 
         // Integer number
         else
         {
-            long val = to!(long)(numStr);
+            long val = atoi(numStr);
             return Token(Token.INT, val, pos);
         }
     }
@@ -745,13 +746,13 @@ Token getToken(ref StrStream stream, LexFlags flags)
             {
                 auto escCh = readEscape(stream);
                 if (escCh != -1)
-                    str ~= escCh;
+                    str += escCh;
             }
 
             // Normal character
             else
             {
-                str ~= ch;
+                str += ch;
             }
         }
 
@@ -794,13 +795,13 @@ Token getToken(ref StrStream stream, LexFlags flags)
             {
                 auto escCh = readEscape(stream);
                 if (escCh != -1)
-                    str ~= escCh;
+                    str += escCh;
             }
 
             // Normal character
             else
             {
-                str ~= ch;
+                str += ch;
             }
         }
 
@@ -825,7 +826,7 @@ Token getToken(ref StrStream stream, LexFlags flags)
             if (identPart(ch) == false)
                 break;
             stream.readCh();
-            identStr ~= ch;
+            identStr += ch;
         }
 
         // Try matching all keywords
@@ -860,14 +861,14 @@ Token getToken(ref StrStream stream, LexFlags flags)
                 if (stream.peekCh() == '/')
                 {
                     stream.readCh();
-                    reStr ~= "\\/"w;
+                    reStr += "\\/"w;
                     continue;
                 }
 
                 if (stream.peekCh() == '\\')
                 {
                     stream.readCh();
-                    reStr ~= "\\\\"w;
+                    reStr += "\\\\"w;
                     continue;
                 }
             }
@@ -884,7 +885,7 @@ Token getToken(ref StrStream stream, LexFlags flags)
                 return Token(Token.ERROR, "EOF in literal", stream.getPos());
             }
 
-            reStr ~= ch;
+            reStr += ch;
         }
 
         // Read the flags
@@ -897,7 +898,7 @@ Token getToken(ref StrStream stream, LexFlags flags)
                 break;
 
             stream.readCh();
-            reFlags ~= ch;
+            reFlags += ch;
         }
 
         //writefln("reStr: \"%s\"", reStr);
@@ -906,55 +907,58 @@ Token getToken(ref StrStream stream, LexFlags flags)
     }
 
     // Try matching all separators
-    foreach (sep; separators)
+    for (auto sep : separators)
         if (stream.match(sep))
             return Token(Token.SEP, sep, pos);
 
     // Try matching all ops
-    foreach (op; operators)
+    for (auto op : operators)
         if (stream.match(op.str))
             return Token(Token.OP, op.str, pos);
 
     // Invalid character
+    assert(0);
+    /*
     int charVal = stream.readCh();
     std::string charStr;
     if (charVal >= 33 && charVal <= 126)
-        charStr ~= "'"w ~ cast(char)charVal ~ "', "w;
-    charStr ~= to!std::string(format("0x%04x", charVal));
+        charStr += "'"w ~ cast(char)charVal ~ "', "w;
+    charStr += to!std::string(format("0x%04x", charVal));
     return Token(
         Token.ERROR,
         "unexpected character ("w ~ charStr ~ ")", 
         pos
     );
+    */
 }
 
 /**
 Token stream, to simplify parsing
 */
-class TokenStream
+struct TokenStream
 {
     /// String stream before the next token
-    private StrStream preStream;
+    StrStream preStream;
 
     /// String stream after the next token
-    private StrStream postStream;
+    StrStream postStream;
 
     /// Flag indicating a newline occurs before the next token
-    private bool nlPresent;
+    bool nlPresent;
 
     /// Next token to be read
-    private Token nextToken;
+    Token nextToken;
 
     // Next token available flag
-    private bool tokenAvail;
+    bool tokenAvail;
 
     // Lexer flags used when reading the next token
-    private LexFlags lexFlags;
+    LexFlags lexFlags;
 
     /**
     Constructor to tokenize a string stream
     */
-    this(StrStream strStream)
+    TokenStream(StrStream strStream)
     {
         preStream = strStream;
 
@@ -965,7 +969,7 @@ class TokenStream
     /**
     Copy constructor for this token stream. Allows for backtracking
     */
-    this(TokenStream that)
+    TokenStream(TokenStream that)
     {
         // Copy the string streams
         preStream = that.preStream;
