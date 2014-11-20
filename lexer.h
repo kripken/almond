@@ -333,7 +333,7 @@ struct StrStream
     }
 
     /// Test for a match with a given string, the string is consumed if matched
-    bool match(char *str_)
+    bool match(const char *str_)
     {
         if (index + strLen > strLen)
             return false;
@@ -445,19 +445,19 @@ struct Token
     };
 
     /// Source position
-    SrcPos pos;
+    SrcPos* pos;
 
-    Token(Type type_, long val_, SrcPos pos_) : type(type_), intVal(val_), pos(pos_)
+    Token(Type type_, long val_, SrcPos* pos_) : type(type_), intVal(val_), pos(pos_)
     {
         assert (type_ == INT);
     }
 
-    Token(Type type_, double val_, SrcPos pos_) : type(type_), floatVal(val_), pos(pos_)
+    Token(Type type_, double val_, SrcPos* pos_) : type(type_), floatVal(val_), pos(pos_)
     {
         assert (type_ == FLOAT);
     }
 
-    Token(Type type_, std::string val_, SrcPos pos_) : type(type_), stringVal(val_), pos(pos_)
+    Token(Type type_, std::string val_, SrcPos* pos_) : type(type_), stringVal(val_), pos(pos_)
     {
         assert (
             type_ == OP      ||
@@ -469,12 +469,12 @@ struct Token
         );
     }
 
-    Token(Type type_, std::string re_, std::string flags_, SrcPos pos_) : type(type_), regexpVal(re_), flagsVal(flags_), pos(pos_)
+    Token(Type type_, std::string re_, std::string flags_, SrcPos* pos_) : type(type_), regexpVal(re_), flagsVal(flags_), pos(pos_)
     {
         assert (type == REGEXP);
     }
 
-    Token(Type type_, SrcPos pos_) : type(type_), pos(pos_)
+    Token(Type type_, SrcPos* pos_) : type(type_), pos(pos_)
     {
         assert (type == EOFF);
     }
@@ -579,7 +579,7 @@ int readEscape(StrStream& stream)
 /**
 Get the first token from a stream
 */
-Token getToken(StrStream& stream, LexFlags flags)
+Token* getToken(StrStream& stream, LexFlags flags)
 {
     char ch;
 
@@ -613,7 +613,7 @@ Token getToken(StrStream& stream, LexFlags flags)
                 if (stream.match("*/"))
                     break;
                 if (stream.peekCh() == '\0')
-                    return Token(
+                    return new Token(
                         Token::ERROR,
                         "end of stream in multi-line comment", 
                         stream.getPos()
@@ -630,7 +630,7 @@ Token getToken(StrStream& stream, LexFlags flags)
     }
 
     // Get the position at the start of the token
-    SrcPos pos = stream.getPos();
+    SrcPos* pos = stream.getPos();
 
     // Number (starting with a digit or .nxx)
     if (digit(ch) || (ch == '.' && digit(stream.peekCh(1))))
@@ -641,9 +641,9 @@ Token getToken(StrStream& stream, LexFlags flags)
             static std::regex hexRegex("^[0-9|a-f|A-F]+");
             auto m = stream.match(hexRegex);
 
-            if (m.empty)
+            if (m.empty())
             {
-                return Token(
+                return new Token(
                     Token::ERROR,
                     "invalid hex number", 
                     pos
@@ -652,9 +652,9 @@ Token getToken(StrStream& stream, LexFlags flags)
 
             auto hexStr = m[0];
             long val;
-            scanf(hexStr.c_str(), "%x", &val);
+            scanf(hexStr.str().c_str(), "%x", &val);
 
-            return Token(Token.INT, val, pos);
+            return new Token(Token::INT, val, pos);
         }
 
         // Octal number
@@ -663,35 +663,35 @@ Token getToken(StrStream& stream, LexFlags flags)
             static std::regex octRegex("^0([0-7]+)");
 
             auto m = stream.match(octRegex);
-            if (!m.empty)
+            if (!m.empty())
             {
                 auto octStr = m[1];
                 long val;
-                scanf(octStr, "%o", &val);
-                return Token(Token.INT, val, pos);
+                scanf(octStr.str().c_str(), "%o", &val);
+                return new Token(Token::INT, val, pos);
             }
         }
 
         static std::regex fpRegex("^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?");
 
         auto m = stream.match(fpRegex);
-        assert (m.empty == false);
-        auto numStr = m[0];
+        assert (m.empty() == false);
+        auto numStr = m[0].str().c_str();
 
         // If this is a floating-point number
-        if (countUntil(numStr, '.') != -1 ||
-            countUntil(numStr, 'e') != -1 ||
-            countUntil(numStr, 'E') != -1)
+        if (strchr(numStr, '.') ||
+            strchr(numStr, 'e') ||
+            strchr(numStr, 'E'))
         {
             double val = atof(numStr);
-            return Token(Token.FLOAT, val, pos);
+            return new Token(Token::FLOAT, val, pos);
         }
 
         // Integer number
         else
         {
             long val = atoi(numStr);
-            return Token(Token.INT, val, pos);
+            return new Token(Token::INT, val, pos);
         }
     }
 
@@ -715,7 +715,7 @@ Token getToken(StrStream& stream, LexFlags flags)
             // End of file
             else if (ch == '\0')
             {
-                return Token(
+                return new Token(
                     Token::ERROR,
                     "EOF in string literal",
                     stream.getPos()
@@ -725,7 +725,7 @@ Token getToken(StrStream& stream, LexFlags flags)
             // End of line
             else if (ch == '\n')
             {
-                return Token(
+                return new Token(
                     Token::ERROR,
                     "newline in string literal",
                     stream.getPos()
@@ -747,7 +747,7 @@ Token getToken(StrStream& stream, LexFlags flags)
             }
         }
 
-        return Token(Token.STRING, str, pos);
+        return new Token(Token::STRING, str, pos);
     }
 
     // Quasi literal
@@ -774,7 +774,7 @@ Token getToken(StrStream& stream, LexFlags flags)
             // End of file
             else if (ch == '\0')
             {
-                return Token(
+                return new Token(
                     Token::ERROR,
                     "EOF in string literal",
                     stream.getPos()
@@ -796,20 +796,21 @@ Token getToken(StrStream& stream, LexFlags flags)
             }
         }
 
-        return Token(Token.STRING, str, pos);
+        return new Token(Token::STRING, str, pos);
     }
 
     // End of file
     if (ch == '\0')
     {
-        return Token(Token.EOFF, pos);
+        return new Token(Token::EOFF, pos);
     }
 
     // Identifier or keyword
     if (identStart(ch))
     {
         stream.readCh();
-        std::string identStr = ch;
+        std::string identStr;
+        identStr += ch;
 
         for (;;)
         {
@@ -821,15 +822,16 @@ Token getToken(StrStream& stream, LexFlags flags)
         }
 
         // Try matching all keywords
-        if (countUntil(keywords, identStr) != -1)
-            return Token(Token.KEYWORD, identStr, pos);
+        for (auto keyword : keywords)
+            if (identStr == keyword) {
+                return new Token(Token::KEYWORD, identStr, pos);
 
         // Try matching all ops
-        foreach (op; operators)
+        for (auto op : operators)
             if (identStr == op.str)
-                return Token(Token.OP, identStr, pos);
+                return new Token(Token::OP, identStr, pos);
 
-        return Token(Token.IDENT, identStr, pos);
+        return new Token(Token::IDENT, identStr, pos);
     }
 
     // Regular expression
@@ -873,7 +875,7 @@ Token getToken(StrStream& stream, LexFlags flags)
             // End of file
             if (ch == '\0')
             {
-                return Token(Token::ERROR, "EOF in literal", stream.getPos());
+                return new Token(Token::ERROR, "EOF in literal", stream.getPos());
             }
 
             reStr += ch;
@@ -894,18 +896,18 @@ Token getToken(StrStream& stream, LexFlags flags)
 
         //writefln("reStr: \"%s\"", reStr);
 
-        return Token(Token.REGEXP, reStr, reFlags, pos);
+        return new Token(Token::REGEXP, reStr, reFlags, pos);
     }
 
     // Try matching all separators
     for (auto sep : separators)
-        if (stream.match(sep))
-            return Token(Token.SEP, sep, pos);
+        if (stream.match(sep.c_str()))
+            return new Token(Token::SEP, sep, pos);
 
     // Try matching all ops
     for (auto op : operators)
-        if (stream.match(op.str))
-            return Token(Token.OP, op.str, pos);
+        if (stream.match(op.str.c_str()))
+            return new Token(Token::OP, op.str, pos);
 
     // Invalid character
     assert(0);
@@ -915,7 +917,7 @@ Token getToken(StrStream& stream, LexFlags flags)
     if (charVal >= 33 && charVal <= 126)
         charStr += "'"w ~ cast(char)charVal ~ "', ";
     charStr += to!std::string(format("0x%04x", charVal));
-    return Token(
+    return new Token(
         Token::ERROR,
         "unexpected character ("w ~ charStr ~ ")", 
         pos
@@ -960,7 +962,7 @@ struct TokenStream
     /**
     Copy constructor for this token stream. Allows for backtracking
     */
-    TokenStream(TokenStream that)
+    TokenStream(TokenStream& that)
     {
         // Copy the string streams
         preStream = that.preStream;
@@ -975,7 +977,7 @@ struct TokenStream
     /**
     Method to backtrack to a previous state
     */
-    void backtrack(TokenStream that)
+    void backtrack(TokenStream& that)
     {
         // Copy the string streams
         preStream = that.preStream;
@@ -1010,7 +1012,7 @@ struct TokenStream
         auto t = peek(flags);
 
         // Cannot read the last (EOF) token
-        assert (t.type != Token.EOFF, "cannot read final EOF token");
+        assert (t.type != Token::EOFF ); // "cannot read final EOF token"
 
         // Read the token
         preStream = postStream;
@@ -1030,13 +1032,13 @@ struct TokenStream
     bool peekKw(std::string keyword)
     {
         auto t = peek();
-        return (t.type == Token.KEYWORD && t.stringVal == keyword);
+        return (t.type == Token::KEYWORD && t.stringVal == keyword);
     }
 
     bool peekSep(std::string sep)
     {
         auto t = peek();
-        return (t.type == Token.SEP && t.stringVal == sep);
+        return (t.type == Token::SEP && t.stringVal == sep);
     }
 
     bool matchKw(std::string keyword)
@@ -1059,7 +1061,7 @@ struct TokenStream
 
     bool eof()
     {
-        return peek().type == Token.EOFF;
+        return peek().type == Token::EOFF;
     }
 }
 
