@@ -823,7 +823,7 @@ Token* getToken(StrStream& stream, LexFlags flags)
 
         // Try matching all keywords
         for (auto keyword : keywords)
-            if (identStr == keyword) {
+            if (identStr == keyword)
                 return new Token(Token::KEYWORD, identStr, pos);
 
         // Try matching all ops
@@ -940,7 +940,7 @@ struct TokenStream
     bool nlPresent;
 
     /// Next token to be read
-    Token nextToken;
+    Token* nextToken;
 
     // Next token available flag
     bool tokenAvail;
@@ -951,13 +951,7 @@ struct TokenStream
     /**
     Constructor to tokenize a string stream
     */
-    TokenStream(StrStream* strStream)
-    {
-        preStream = strStream;
-
-        tokenAvail = false;
-        nlPresent = false;
-    }
+    TokenStream(StrStream* strStream) : preStream(strStream), postStream(nullptr), nlPresent(false), nextToken(nullptr), tokenAvail(false) {}
 
     /**
     Copy constructor for this token stream. Allows for backtracking
@@ -989,37 +983,37 @@ struct TokenStream
         lexFlags = that.lexFlags;
     }
 
-    SrcPos getPos()
+    SrcPos* getPos()
     {
-        return preStream.getPos();
+        return preStream->getPos();
     }
 
-    Token peek(LexFlags lexFlags = 0)
+    Token* peek(LexFlags lexFlags_ = 0)
     {
-        if (tokenAvail is false || lexFlags != lexFlags)
+        if (!tokenAvail || lexFlags != lexFlags_)
         {
             postStream = preStream;
-            nextToken = getToken(postStream, lexFlags);
+            nextToken = getToken(*postStream, lexFlags_);
             tokenAvail = true;
-            lexFlags = lexFlags;
+            lexFlags = lexFlags_;
         }
 
         return nextToken;
     }
 
-    Token read(LexFlags flags = 0)
+    Token* read(LexFlags flags = 0)
     {
         auto t = peek(flags);
 
         // Cannot read the last (EOF) token
-        assert (t.type != Token::EOFF ); // "cannot read final EOF token"
+        assert (t->type != Token::EOFF ); // "cannot read final EOF token"
 
         // Read the token
         preStream = postStream;
         tokenAvail = false;
 
         // Test if a newline occurs before the new front token
-        nlPresent = (peek.pos.line > t.pos.line);
+        nlPresent = (peek()->pos->line > t->pos->line);
 
         return t;
     }
@@ -1032,13 +1026,13 @@ struct TokenStream
     bool peekKw(std::string keyword)
     {
         auto t = peek();
-        return (t.type == Token::KEYWORD && t.stringVal == keyword);
+        return (t->type == Token::KEYWORD && t->stringVal == keyword);
     }
 
     bool peekSep(std::string sep)
     {
         auto t = peek();
-        return (t.type == Token::SEP && t.stringVal == sep);
+        return (t->type == Token::SEP && t->stringVal == sep);
     }
 
     bool matchKw(std::string keyword)
@@ -1061,9 +1055,9 @@ struct TokenStream
 
     bool eof()
     {
-        return peek().type == Token::EOFF;
+        return peek()->type == Token::EOFF;
     }
-}
+};
 
 } // namespace almond
 
