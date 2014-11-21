@@ -743,55 +743,18 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
             // Recursively parse the rhs
             ASTNode rhsExpr = parseExpr(input, nextMinPrec);
 
-            // Convert expressions of the form "x <op>= y" to "x = x <op> y"
+            // Convert expressions of the form "x <op>= y" to "x = x <op> y" // XXX
             auto eqOp = findOperator("=", 2, 'r');
-            if (op.str.length >= 2 && op.str.back == '=' && op.prec == eqOp.prec)
+            if (op.str.size() >= 2 && op.str.back() == '=' && op.prec == eqOp.prec)
             {
-                auto rhsOp = findOperator(op.str[0..op.str.length-1], 2);
-                assert (rhsOp !is null);
-                rhsExpr = new BinOpExpr(rhsOp, lhsExpr, rhsExpr, rhsExpr.pos);
+                auto rhsOp = findOperator(op.str.substr([0, op.str.length-1), 2);
+                assert (rhsOp != nullptr);
+                rhsExpr = Builder.makeBinary(rhsOp, lhsExpr, rhsExpr, rhsExpr.pos);
                 op = eqOp;
             }
 
-            // If this is an assignment of a function to something,
-            // try to assign the function a name
-            if (auto funExpr = cast(FunExpr)rhsExpr)
-            {
-                if (op.str == "=" && funExpr.name is null)
-                {
-                    std::string nameStr;
-
-                    for (auto curExpr = lhsExpr; curExpr !is null;)
-                    {
-                        std::string subStr;
-
-                        if (auto idxExpr = cast(IndexExpr)curExpr)
-                        {
-                            if (auto strExpr = cast(StringExpr)idxExpr.index)
-                                subStr = strExpr.val;
-                            curExpr = idxExpr.base;
-                        }
-                        else if (auto identExpr = cast(ASTNode)curExpr)
-                        {
-                            subStr = identExpr.name;
-                            curExpr = null;
-                        }
-                        else
-                        {
-                            nameStr = ""w;
-                            break;
-                        }
-
-                        nameStr = subStr ~ (nameStr? "_"w:"") ~ nameStr;
-                    }
-
-                    if (nameStr)
-                        funExpr.name = new ASTNode(nameStr, funExpr.pos);
-                }
-            }
-
             // Update lhs with the new value
-            lhsExpr = new BinOpExpr(op, lhsExpr, rhsExpr, lhsExpr.pos);
+            lhsExpr = Builder.makeBinary(op, lhsExpr, rhsExpr, lhsExpr.pos);
         }
 
         // If this is a unary operator
@@ -801,16 +764,14 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
             input.read();
 
             // Update lhs with the new value
-            lhsExpr = new UnOpExpr(op, lhsExpr, lhsExpr.pos);
+            lhsExpr = Builder.makeUnary(op, lhsExpr, lhsExpr.pos);
         }
 
         else
         {
-            assert (false, "unhandled operator");
+            assert (false); // "unhandled operator");
         }
     }
-
-    //writeln("leaving parseExpr");
 
     // Return the parsed expression
     return lhsExpr;
@@ -821,8 +782,6 @@ Parse an atomic expression
 */
 ASTNode parseAtom(TokenStream& input)
 {
-    //writeln("parseAtom");
-
     Token t = input.peek(LEX_MAYBE_RE);
     SrcPos pos = t.pos;
 
