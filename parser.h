@@ -376,17 +376,19 @@ ASTNode parseStmt(TokenStream& input)
     // Break statement
     else if (input.matchKw("break"))
     {
-        auto label = input.peekSemiAuto()? null:input.readIdent();
+        auto label = input.peekSemiAuto() ? nullptr : input.readIdent();
         readSemiAuto(input);
-        return new BreakStmt(label, pos);
+        printf("break\n"); // mAKE BREAK(label, pos)
+        return nullptr;
     }
 
     // Continue statement
     else if (input.matchKw("continue"))
     {
-        auto label = input.peekSemiAuto()? null:input.readIdent();
+        auto label = input.peekSemiAuto() ? nullptr : input.readIdent();
         readSemiAuto(input);
-        return new ContStmt(label, pos);
+        printf("continue\n"); // mAKE CONTINUE(label, pos)
+        return nullptr;
     }
 
     // Return statement
