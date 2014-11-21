@@ -564,8 +564,8 @@ ASTNode* parseForStmt(TokenStream& input)
     {
         // Parse the init statement
         auto initStmt = parseStmt(input);
-        if (!Builder::isVar(initStmt) && !Builder::isExpression(initStmt))
-            throw new ParseError("invalid for-loop init statement", initStmt.pos);
+        // XXX TODO if (!Builder::isVar(initStmt) && !Builder::isExpression(initStmt))
+        //    throw new ParseError("invalid for-loop init statement", initStmt.pos);
 
         // Parse the test expression
         pos = input.getPos();
@@ -596,7 +596,7 @@ ASTNode* parseForStmt(TokenStream& input)
         // Parse the loop body
         auto bodyStmt = parseStmt(input);
 
-        return Builder::makeFor(initStmt, testExpr, incrExpr, bodyStmt, pos);
+        return Builder::makeFor(initStmt, testExpr, incrExpr, bodyStmt);
     }
 
     // This is a for-in statement
@@ -604,8 +604,8 @@ ASTNode* parseForStmt(TokenStream& input)
     {
         auto hasDecl = input.matchKw("var");
         auto varExpr = parseExpr(input, IN_PREC+1);
-        if (hasDecl && !Builder::isName(varExpr)) // XXX
-            throw new ParseError("invalid variable expression in for-in loop", pos);
+        // XXX if (hasDecl && !Builder::isName(varExpr)) // XXX
+        //    throw new ParseError("invalid variable expression in for-in loop", pos);
 
         auto inTok = input.peek();
         if (inTok->type != Token::OP || inTok->stringVal != "in")
@@ -619,7 +619,7 @@ ASTNode* parseForStmt(TokenStream& input)
         // Parse the loop body
         auto bodyStmt = parseStmt(input);
 
-        return Builder::makeForIn(hasDecl, varExpr, inExpr, bodyStmt, pos);
+        return Builder::makeForIn(hasDecl, varExpr, inExpr, bodyStmt);
     }
 }
 
@@ -740,12 +740,12 @@ ASTNode* parseExpr(TokenStream& input, int minPrec = 0)
             {
                 auto rhsOp = findOperator(op->str.substr(0, op->str.size()-1), 2);
                 assert (rhsOp != nullptr);
-                rhsExpr = Builder::makeBinary(rhsOp, lhsExpr, rhsExpr); //, rhsExpr->pos);
+                rhsExpr = Builder::makeBinary(rhsOp->str, lhsExpr, rhsExpr); //, rhsExpr->pos);
                 op = eqOp;
             }
 
             // Update lhs with the new value
-            lhsExpr = Builder::makeBinary(op, lhsExpr, rhsExpr); //, lhsExpr.pos);
+            lhsExpr = Builder::makeBinary(op->str, lhsExpr, rhsExpr); //, lhsExpr.pos);
         }
 
         // If this is a unary operator
@@ -755,7 +755,7 @@ ASTNode* parseExpr(TokenStream& input, int minPrec = 0)
             input.read();
 
             // Update lhs with the new value
-            lhsExpr = Builder::makeUnary(op, lhsExpr); //, lhsExpr.pos);
+            lhsExpr = Builder::makeUnary(op->str, lhsExpr); //, lhsExpr.pos);
         }
 
         else
@@ -794,7 +794,7 @@ ASTNode* parseAtom(TokenStream& input)
     else if (t->type == Token::SEP && t->stringVal == "[")
     {
         auto exprs = parseExprList(input, "[", "]");
-        return Builder::makeArray(exprs, pos);
+        return Builder::makeArray(exprs);
     }
 
     // Object literal
@@ -874,7 +874,7 @@ ASTNode* parseAtom(TokenStream& input)
         auto argExprs = input.peekSep("(") ? parseExprList(input, "(", ")") : nullptr;
 
         // Create the new expression
-        return Builder::makeNew(baseExpr, argExprs, t->pos);
+        return Builder::makeNew(baseExpr, argExprs);
     }
 
     // Function expression
@@ -882,61 +882,58 @@ ASTNode* parseAtom(TokenStream& input)
     else if (input.matchKw("function"))
     {
         auto nextTok = input.peek();
-        auto nameExpr = (nextTok->type != Token::SEP) ? parseAtom(input) : nullptr;
-        if (nameExpr && !Builder::isName(nameExpr))
-            throw new ParseError("invalid function name", nameExpr.pos);
 
         auto params = parseParamList(input);
 
         auto bodyStmt = parseStmt(input);
 
-        return Builder::makeFun(nameExpr, params, bodyStmt, pos);
+        return Builder::makeFunction(nextTok->stringVal, params, bodyStmt);
     }
 
     // Identifier/symbol literal
     else if (t->type == Token::IDENT)
     {
         input.read();
-        return Builder::makeName(t->stringVal, pos);
+        return Builder::makeName(t->stringVal);
     }
 
     // Integer literal
     else if (t->type == Token::INT)
     {
         input.read();
-        return Builder::makeNum(t->intVal, pos);
+        return Builder::makeNum(t->intVal);
     }
 
     // Floating-point literal
     else if (t->type == Token::FLOAT)
     {
         input.read();
-        return Builder::makeNum(t->floatVal, pos);
+        return Builder::makeNum(t->floatVal);
     }
 
     // String literal
     else if (t->type == Token::STRING)
     {
         input.read();
-        return Builder::makeString(t->stringVal, pos);
+        return Builder::makeString(t->stringVal);
     }
 
     // True boolean constant
     else if (input.matchKw("true"))
     {
-        return Builder::makeBool(true, pos);
+        return Builder::makeBool(true);
     }
 
     // False boolean constant
     else if (input.matchKw("false"))
     {
-        return Builder::makeBool(false, pos);
+        return Builder::makeBool(false);
     }
 
     // Null constant
     else if (input.matchKw("null"))
     {
-        return Builder::makeNull(pos);
+        return Builder::makeNull();
     }
 
     // Unary expressions
@@ -958,7 +955,7 @@ ASTNode* parseAtom(TokenStream& input)
         ASTNode* expr = parseExpr(input, op->prec);
 
         // Return the unary expression
-        return Builder::makeUnary(op, expr, pos);
+        return Builder::makeUnary(op, expr);
     }
 
     throw new ParseError("unexpected token: " + t->toString(), pos);

@@ -50,6 +50,14 @@ struct TestBuilder {
     printf("makeDo");
     return nullptr;
   }
+  static TestNode* makeFor(TestNode* init, TestNode* cond, TestNode* inc, TestNode* body) {
+    printf("makeFor");
+    return nullptr;
+  }
+  static TestNode* makeForIn(bool hasDecl, TestNode* var, TestNode* in, TestNode* body) {
+    printf("makeFor");
+    return nullptr;
+  }
   static TestNode* makeSwitch(TestNode* cond) {
     printf("makeSwitch");
     return nullptr;
@@ -66,8 +74,12 @@ struct TestBuilder {
     printf("appendSwitchDefault");
     return nullptr;
   }
-  static bool isBinary(TestNode* node) {
+  static bool isBinary(TestNode* node, std::string op) {
     printf("isBinary");
+    return true;
+  }
+  static bool isName(TestNode* node) {
+    printf("isName");
     return true;
   }
   static TestNode* makeBreak(std::string label) {
@@ -120,6 +132,34 @@ struct TestBuilder {
   }
   static TestNode* makeUnary(std::string op, TestNode* inner) {
     printf("makeUnary");
+    return nullptr;
+  }
+  static TestNode* makeArray(TestNode* vals) {
+    printf("makeArray");
+    return nullptr;
+  }
+  static TestNode* makeNew(TestNode* base, TestNode* args) {
+    printf("makeNew");
+    return nullptr;
+  }
+  static TestNode* makeFunction(std::string name, TestNode* params, TestNode* body) {
+    printf("makeFunction");
+    return nullptr;
+  }
+  static TestNode* makeName(std::string name) {
+    printf("makeName");
+    return nullptr;
+  }
+  static TestNode* makeNum(double num) {
+    printf("makeNum");
+    return nullptr;
+  }
+  static TestNode* makeString(std::string str) {
+    printf("makeString");
+    return nullptr;
+  }
+  static TestNode* makeBool(bool b) {
+    printf("makeBool");
     return nullptr;
   }
 /*
