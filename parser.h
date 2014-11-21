@@ -955,7 +955,7 @@ ASTNode* parseAtom(TokenStream& input)
         ASTNode* expr = parseExpr(input, op->prec);
 
         // Return the unary expression
-        return Builder::makeUnary(op, expr);
+        return Builder::makeUnary(op->str, expr);
     }
 
     throw new ParseError("unexpected token: " + t->toString(), pos);
