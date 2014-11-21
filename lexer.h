@@ -396,7 +396,7 @@ bool identPart(char ch)
     return identStart(ch) || digit(ch);
 }
 
-bool ident(char* str)
+bool ident(const char* str)
 {
     if (str[0] == 0 || !identStart(str[0]))
         return false;
@@ -444,7 +444,7 @@ struct Token
         };
     };
 
-    bool operator=(Token& other)
+    bool operator==(Token& other)
     {
         if (type != other.type) return false;
         if (type == INT) return intVal == other.intVal;

@@ -527,7 +527,7 @@ Parse a for or for-in loop statement
 ASTNode parseForStmt(TokenStream& input)
 {
     /// Test if this is a for-in statement and backtrack
-    auto isForIn = [](TokenStream& input)
+    auto isForIn = [&](TokenStream& input)
     {
         // Copy the starting input to allow backtracking
         TokenStream startInput(input);
@@ -559,7 +559,7 @@ ASTNode parseForStmt(TokenStream& input)
     auto pos = input.getPos();
 
     // Read the for keyword and the opening parenthesis
-    input.readKw("for");
+    readKw(input, "for");
     readSep(input, "(");
 
     // If this is a regular for-loop statement
@@ -611,7 +611,7 @@ ASTNode parseForStmt(TokenStream& input)
             throw new ParseError("invalid variable expression in for-in loop", pos);
 
         auto inTok = input.peek();
-        if (inTok.type != Token::OP || inTok.stringVal != "in")
+        if (inTok->type != Token::OP || inTok->stringVal != "in")
             throw new ParseError("expected \"in\" keyword", input.getPos());
         input.read();
 
@@ -652,38 +652,38 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
     for (;;)
     {
         // Peek at the current token
-        Token cur = input.peek();
+        auto cur = input.peek();
 
         // If the token is not an operator or separator, break out
-        if (cur.type != Token::OP && cur.type != Token::SEP)
+        if (cur->type != Token::OP && cur->type != Token::SEP)
             break;
 
-        //writefln("op str: %s", cur.stringVal);
+        //writefln("op str: %s", cur->stringVal);
 
         // Attempt to find a corresponding operator
-        auto op = findOperator(cur.stringVal, 2);
+        auto op = findOperator(cur->stringVal, 2);
         if (!op)
-            op = findOperator(cur.stringVal, 1, 'l');
-        if (!op && cur.stringVal == "?")
-            op = findOperator(cur.stringVal, 3);
+            op = findOperator(cur->stringVal, 1, 'l');
+        if (!op && cur->stringVal == "?")
+            op = findOperator(cur->stringVal, 3);
 
         // If no operator matches, break out
         if (!op)
             break;
 
         // If the new operator has lower precedence, break out
-        if (op.prec < minPrec)
+        if (op->prec < minPrec)
             break;
 
         // Compute the minimal precedence for the recursive call (if any)
-        int nextMinPrec = (op.assoc == 'l') ? (op.prec + 1) : op.prec;
+        int nextMinPrec = (op->assoc == 'l') ? (op->prec + 1) : op->prec;
 
         // If this is a function call expression
-        if (cur.stringVal == "(")
+        if (cur->stringVal == "(")
         {
             // Parse the argument list and create the call expression
             auto argExprs = parseExprList(input, "(", ")");
-            lhsExpr = Builder::makeCall(lhsExpr, argExprs, lhsExpr.pos);
+            lhsExpr = Builder::makeCall(lhsExpr, argExprs); // lhsExpr.pos);
         }
 
         // If this is an array indexing expression
@@ -691,45 +691,45 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
         {
             auto indexExpr = parseExpr(input);
             readSep(input, "]");
-            lhsExpr = Builder::makeSub(lhsExpr, indexExpr, lhsExpr.pos);
+            lhsExpr = Builder::makeSub(lhsExpr, indexExpr); //, lhsExpr.pos);
         }
 
         // If this is a member expression
-        else if (op.str == ".")
+        else if (op->str == ".")
         {
             input.read();
 
             // Parse the identifier string
             auto tok = input.read();
-            if (!(tok.type == Token::IDENT) &&
-                !(tok.type == Token::KEYWORD) &&
-                !(tok.type == Token::OP && ident(tok.stringVal)))
+            if (!(tok->type == Token::IDENT) &&
+                !(tok->type == Token::KEYWORD) &&
+                !(tok->type == Token::OP && ident(tok->stringVal.c_str())))
             {
                 throw new ParseError(
-                    "invalid member identifier \"" ~ tok.toString() ~ "\"", 
-                    tok.pos
+                    "invalid member identifier \"" + tok->toString() + "\"", 
+                    tok->pos
                 );
             }
 
             // Produce an indexing expression
-            lhsExpr = Builder::makeIndex(lhsExpr, tok.stringVal, lhsExpr.pos);
+            lhsExpr = Builder::makeIndex(lhsExpr, tok->stringVal); //, lhsExpr.pos);
         }
 
         // If this is the ternary conditional operator
-        else if (cur.stringVal == "?")
+        else if (cur->stringVal == "?")
         {
             // Consume the current token
             input.read();
 
             auto trueExpr = parseExpr(input);
             readSep(input, ":");
-            auto falseExpr = parseExpr(input, op.prec-1);
+            auto falseExpr = parseExpr(input, op->prec-1);
 
-            lhsExpr = Builder::makeConditional(lhsExpr, trueExpr, falseExpr, lhsExpr.pos);
+            lhsExpr = Builder::makeConditional(lhsExpr, trueExpr, falseExpr); //, lhsExpr.pos);
         }
 
         // If this is a binary operator
-        else if (op.arity == 2)
+        else if (op->arity == 2)
         {
             // Consume the current token
             input.read();
@@ -739,26 +739,26 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
 
             // Convert expressions of the form "x <op>= y" to "x = x <op> y" // XXX
             auto eqOp = findOperator("=", 2, 'r');
-            if (op.str.size() >= 2 && op.str.back() == '=' && op.prec == eqOp.prec)
+            if (op->str.size() >= 2 && op->str.back() == '=' && op->prec == eqOp->prec)
             {
-                auto rhsOp = findOperator(op.str.substr([0, op.str.length-1), 2);
+                auto rhsOp = findOperator(op->str.substr(0, op->str.size()-1), 2);
                 assert (rhsOp != nullptr);
-                rhsExpr = Builder::makeBinary(rhsOp, lhsExpr, rhsExpr, rhsExpr.pos);
+                rhsExpr = Builder::makeBinary(rhsOp, lhsExpr, rhsExpr); //, rhsExpr->pos);
                 op = eqOp;
             }
 
             // Update lhs with the new value
-            lhsExpr = Builder::makeBinary(op, lhsExpr, rhsExpr, lhsExpr.pos);
+            lhsExpr = Builder::makeBinary(op, lhsExpr, rhsExpr); //, lhsExpr.pos);
         }
 
         // If this is a unary operator
-        else if (op.arity == 1)
+        else if (op->arity == 1)
         {
             // Consume the current token
             input.read();
 
             // Update lhs with the new value
-            lhsExpr = Builder::makeUnary(op, lhsExpr, lhsExpr.pos);
+            lhsExpr = Builder::makeUnary(op, lhsExpr); //, lhsExpr.pos);
         }
 
         else
@@ -776,8 +776,8 @@ Parse an atomic expression
 */
 ASTNode parseAtom(TokenStream& input)
 {
-    Token t = input.peek(LEX_MAYBE_RE);
-    SrcPos pos = t.pos;
+    auto t = input.peek(LEX_MAYBE_RE);
+    SrcPos* pos = t->pos;
 
     // End of file
     if (input.eof())
@@ -794,7 +794,7 @@ ASTNode parseAtom(TokenStream& input)
     }
 
     // Array literal
-    else if (t.type == Token::SEP && t.stringVal == "[")
+    else if (t->type == Token::SEP && t->stringVal == "[")
     {
         auto exprs = parseExprList(input, "[", "]");
         return Builder::makeArray(exprs, pos);
@@ -854,7 +854,7 @@ ASTNode parseAtom(TokenStream& input)
     }
 
     // Regular expression literal
-    else if (t.type == Token::REGEXP)
+    else if (t->type == Token::REGEXP)
     {
         assert(0);
         /*
@@ -864,20 +864,20 @@ ASTNode parseAtom(TokenStream& input)
     }
 
     // New expression
-    else if (t.type == Token::OP && t.stringVal == "new")
+    else if (t->type == Token::OP && t->stringVal == "new")
     {
         // Consume the "new" token
         input.read();
 
         // Parse the base expression
-        auto op = findOperator(t.stringVal, 1, 'r');
-        auto baseExpr = parseExpr(input, op.prec);
+        auto op = findOperator(t->stringVal, 1, 'r');
+        auto baseExpr = parseExpr(input, op->prec);
 
         // Parse the argument list (if present, otherwise assumed empty)
         auto argExprs = input.peekSep("(") ? parseExprList(input, "(", ")") : nullptr;
 
         // Create the new expression
-        return Builder::makeNew(baseExpr, argExprs, t.pos);
+        return Builder::makeNew(baseExpr, argExprs, t->pos);
     }
 
     // Function expression
@@ -885,7 +885,7 @@ ASTNode parseAtom(TokenStream& input)
     else if (input.matchKw("function"))
     {
         auto nextTok = input.peek();
-        auto nameExpr = (nextTok.type != Token::SEP) ? parseAtom(input) : nullptr;
+        auto nameExpr = (nextTok->type != Token::SEP) ? parseAtom(input) : nullptr;
         if (nameExpr && !Builder::isName(nameExpr))
             throw new ParseError("invalid function name", nameExpr.pos);
 
@@ -897,31 +897,31 @@ ASTNode parseAtom(TokenStream& input)
     }
 
     // Identifier/symbol literal
-    else if (t.type == Token::IDENT)
+    else if (t->type == Token::IDENT)
     {
         input.read();
-        return Builder::makeName(t.stringVal, pos);
+        return Builder::makeName(t->stringVal, pos);
     }
 
     // Integer literal
-    else if (t.type == Token::INT)
+    else if (t->type == Token::INT)
     {
         input.read();
-        return Builder::makeNum(t.intVal, pos);
+        return Builder::makeNum(t->intVal, pos);
     }
 
     // Floating-point literal
-    else if (t.type == Token::FLOAT)
+    else if (t->type == Token::FLOAT)
     {
         input.read();
-        return Builder::makeNum(t.floatVal, pos);
+        return Builder::makeNum(t->floatVal, pos);
     }
 
     // String literal
-    else if (t.type == Token::STRING)
+    else if (t->type == Token::STRING)
     {
         input.read();
-        return Builder::makeString(t.stringVal, pos);
+        return Builder::makeString(t->stringVal, pos);
     }
 
     // True boolean constant
@@ -943,13 +943,13 @@ ASTNode parseAtom(TokenStream& input)
     }
 
     // Unary expressions
-    else if (t.type == Token::OP)
+    else if (t->type == Token::OP)
     {
-        auto op = findOperator(t.stringVal, 1, 'r');
+        auto op = findOperator(t->stringVal, 1, 'r');
         if (!op)
         {
             throw new ParseError(
-                "invalid unary operator \"" ~ to!string(t.stringVal) ~ "\"", 
+                "invalid unary operator \"" + t->stringVal + "\"", 
                 pos
             );
         }
@@ -958,13 +958,13 @@ ASTNode parseAtom(TokenStream& input)
         input.read();
 
         // Parse the right subexpression
-        ASTNode expr = parseExpr(input, op.prec);
+        ASTNode expr = parseExpr(input, op->prec);
 
         // Return the unary expression
         return Builder::makeUnary(op, expr, pos);
     }
 
-    throw new ParseError("unexpected token: " ~ t.toString(), pos);
+    throw new ParseError("unexpected token: " + t->toString(), pos);
 }
 
 /**
@@ -1024,10 +1024,10 @@ ASTNode parseParamList(TokenStream& input)
             throw new ParseError("expected comma", input.getPos());
 
         auto expr = parseAtom(input);
-        if (!Builder::isName(expr)) {
+        if (!Builder::isName(expr))
             throw new ParseError("invalid parameter", expr.pos);
 
-        Buider.append(exprs, expr);
+        Builder::append(exprs, expr);
     }
 
     return exprs;
