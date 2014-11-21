@@ -60,6 +60,9 @@ struct ParseError
     }
 }
 
+template<class Builder>
+struct Parser {
+
 /**
 Read and consume a separator token. A parse error
 is thrown if the separator is missing.
@@ -128,10 +131,9 @@ ASTNode readIdent(TokenStream& input)
     if (t.type != Token.IDENT)
         throw new ParseError("expected identifier", t.pos);
 
-    // callback to MAKE IDENT
-    printf("make ident %s", t->stringVal.c_str());
-    //delete t;
-    return nullptr;
+    ASTNode ret = Builder.makeIdent(t->stringVal.c_str());
+    delete t;
+    return ret;
 }
 
 /**
@@ -166,7 +168,7 @@ ASTNode parseFile(std::string fileName, char *src, bool isRuntime = false)
         }
     }
 
-    auto input = new TokenStream(strStream);
+    TokenStream input(strStream);
 
     return parseProgram(input, isRuntime);
 }
@@ -189,12 +191,12 @@ ASTNode parseProgram(TokenStream& input, bool isRuntime)
 {
     SrcPos* pos = input.getPos();
 
-    ASTNode program = nullptr; // MAKE NODE
+    ASTNode program = Builder.makeToplevel();
 
     while (!input.eof())
     {
         ASTNode stmt = parseStmt(input);
-        printf("make append a stat\n"); // MAKE APPEND(program, statement)
+        Builder.appendStatement(program, stmt);
     }
 
     return program;
@@ -237,8 +239,7 @@ ASTNode parseStmt(TokenStream& input)
     // Empty statement
     if (input.matchSep(";"))
     {
-        printf("make empty expression statement\n"); // MAKE
-        return nullptr;
+        return Builder.makeEmpty();
     }
 
     // Block statement
@@ -259,11 +260,10 @@ ASTNode parseStmt(TokenStream& input)
                 );
             }
 
-            parseStmt(input); // MAKE APPEND THIS
-            printf("append\n");
+            Builder.appendStatement(stmts, parseStmt(input));
         }
 
-        return nullptr;
+        return stmts;
     }
 
     // If statement
@@ -281,8 +281,7 @@ ASTNode parseStmt(TokenStream& input)
         else
             falseStmt = nullptr;
 
-        printf("make if\n"); // MAKE IF return new IfStmt(testExpr, trueStmt, falseStmt, pos);
-        return nullptr;
+        return Builder.makeIf(testExpr, trueStmt, falseStmt, pos);
     }
 
     // While loop
@@ -293,8 +292,7 @@ ASTNode parseStmt(TokenStream& input)
         input.readSep(")");
         auto bodyStmt = parseStmt(input);
 
-        printf("make while\n"); new WhileStmt(testExpr, bodyStmt, pos);
-        return nullptr;
+        return Builder.makeWhile(testExpr, bodyStmt, pos);
     }
 
     // Do-while loop
@@ -307,8 +305,7 @@ ASTNode parseStmt(TokenStream& input)
         auto testExpr = parseExpr(input);
         input.readSep(")");
 
-        printf("do-while\n"); // DoWhileStmt(bodyStmt, testExpr, pos);
-        return nullptr;
+        return Builder.makeDo(bodyStmt, testExpr, pos);
     }
 
     // For or for-in loop
@@ -326,10 +323,9 @@ ASTNode parseStmt(TokenStream& input)
         input.readSep("{");
 
         bool defaultSeen = false;
-        ASTNode defaultStmts = nullptr; // MAKE list
 
         printf("switch\n");
-        ASTNode switch = nullptr; // MAKE switch
+        ASTNode switch_ = Builder.makeSwitch(switchExpr);
 
         // For each case
         for (;;)
@@ -344,8 +340,7 @@ ASTNode parseStmt(TokenStream& input)
                 ASTNode caseExpr = parseExpr(input);
                 input.readSep(":");
 
-                printf("  switch case\n");
-                // ADD SWITCH CASE
+                Builder.appendSwitchCase(switch_, caseExpr);
             }
 
             else if (input.matchKw("default"))
@@ -355,8 +350,7 @@ ASTNode parseStmt(TokenStream& input)
                     throw new ParseError("duplicate default label", input.getPos());
 
                 defaultSeen = true;
-                printf("  switch default\n");
-                // ADD SWITCH DEFAULT
+                Builder.appendSwitchDefault(switch_);
             }
 
             else
@@ -364,13 +358,12 @@ ASTNode parseStmt(TokenStream& input)
                 if (!curStmts)
                     throw new ParseError("statement before label", input.getPos());
 
-                printf("  switch code\n");
                 ASTNode statment = parseStmt(input);
-                // ADD STATEMENT TO (currently-tracked) SWITCH CASE
+                Builder.appendSwitchStatement(switch_, statement);
             }
         }
 
-        return nullptr;
+        return switch_;
     }
 
     // Break statement
@@ -378,8 +371,7 @@ ASTNode parseStmt(TokenStream& input)
     {
         auto label = input.peekSemiAuto() ? nullptr : input.readIdent();
         readSemiAuto(input);
-        printf("break\n"); // mAKE BREAK(label, pos)
-        return nullptr;
+        return Builder.makeBreak(label);
     }
 
     // Continue statement
@@ -387,19 +379,18 @@ ASTNode parseStmt(TokenStream& input)
     {
         auto label = input.peekSemiAuto() ? nullptr : input.readIdent();
         readSemiAuto(input);
-        printf("continue\n"); // mAKE CONTINUE(label, pos)
-        return nullptr;
+        return Builder.makeContinue(label);
     }
 
     // Return statement
     else if (input.matchKw("return"))
     {
         if (input.matchSep(";") || input.peekSemiAuto())
-            return new ReturnStmt(null, pos);
+            return Builder.makeReturn(nullptr);
 
         ASTNode expr = parseExpr(input);
         readSemiAuto(input);
-        return new ReturnStmt(expr, pos);
+        return Builder.makeReturn(expr);
     }
 
     // Throw statement
@@ -407,7 +398,7 @@ ASTNode parseStmt(TokenStream& input)
     {
         ASTNode expr = parseExpr(input);
         readSemiAuto(input);
-        return new ThrowStmt(expr, pos);
+        return Builder.makeThrow(expr, pos);
     }
 
     // Try-catch-finally statement
@@ -415,13 +406,13 @@ ASTNode parseStmt(TokenStream& input)
     {
         auto tryStmt = parseStmt(input);
 
-        IdentExpr catchIdent = null;
+        ASTNode catchIdent = null;
         ASTNode catchStmt = null;
         if (input.matchKw("catch"))
         {
             input.readSep("(");
-            catchIdent = cast(IdentExpr)parseExpr(input);
-            if (catchIdent is null)
+            catchIdent = parseExpr(input);
+            if (catchIdent == nullptr)
                 throw new ParseError("invalid catch identifier", catchIdent.pos);
             input.readSep(")");
             catchStmt = parseStmt(input);
@@ -436,7 +427,7 @@ ASTNode parseStmt(TokenStream& input)
         if (!catchStmt && !finallyStmt)
             throw new ParseError("no catch or finally block", input.getPos());
 
-        return new TryStmt(
+        return Builder.makeTry(
             tryStmt, 
             catchIdent, 
             catchStmt,
@@ -447,7 +438,7 @@ ASTNode parseStmt(TokenStream& input)
     // Variable declaration/initialization statement
     else if (input.matchKw("var"))
     {
-        IdentExpr[] identExprs = [];
+        ASTNode[] identExprs = [];
         ASTNode[] initExprs = [];
 
         // For each declaration
@@ -468,7 +459,7 @@ ASTNode parseStmt(TokenStream& input)
                     name.pos
                 );
             }
-            IdentExpr identExpr = new IdentExpr(name.stringVal, name.pos);
+            ASTNode identExpr = new ASTNode(name.stringVal, name.pos);
 
             ASTNode initExpr = null;
             auto op = input.peek();
@@ -509,7 +500,7 @@ ASTNode parseStmt(TokenStream& input)
     // If this is a labelled statement
     else if (isLabel(input))
     {
-        auto label = cast(IdentExpr)parseAtom(input);
+        auto label = cast(ASTNode)parseAtom(input);
         input.readSep(":");
         auto stmt = parseStmt(input);
         stmt.labels ~= label;
@@ -627,7 +618,7 @@ ASTNode parseForStmt(TokenStream& input)
     {
         auto hasDecl = input.matchKw("var");
         auto varExpr = parseExpr(input, IN_PREC+1);
-        if (hasDecl && cast(IdentExpr)varExpr is null)
+        if (hasDecl && cast(ASTNode)varExpr is null)
             throw new ParseError("invalid variable expression in for-in loop", pos);
 
         auto inTok = input.peek();
@@ -790,7 +781,7 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
                                 subStr = strExpr.val;
                             curExpr = idxExpr.base;
                         }
-                        else if (auto identExpr = cast(IdentExpr)curExpr)
+                        else if (auto identExpr = cast(ASTNode)curExpr)
                         {
                             subStr = identExpr.name;
                             curExpr = null;
@@ -805,7 +796,7 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
                     }
 
                     if (nameStr)
-                        funExpr.name = new IdentExpr(nameStr, funExpr.pos);
+                        funExpr.name = new ASTNode(nameStr, funExpr.pos);
                 }
             }
 
@@ -946,7 +937,7 @@ ASTNode parseAtom(TokenStream& input)
     {
         auto nextTok = input.peek();
         auto nameExpr = (nextTok.type != Token.SEP)? parseAtom(input):null;
-        auto funcName = cast(IdentExpr)nameExpr;
+        auto funcName = cast(ASTNode)nameExpr;
         if (nameExpr && !funcName)
             throw new ParseError("invalid function name", nameExpr.pos);
 
@@ -961,7 +952,7 @@ ASTNode parseAtom(TokenStream& input)
     else if (t.type == Token.IDENT)
     {
         input.read();
-        return new IdentExpr(t.stringVal, pos);
+        return new ASTNode(t.stringVal, pos);
     }
 
     // Integer literal
@@ -1071,7 +1062,7 @@ ASTNode[] parseExprList(TokenStream& input, std::string openSep, std::string clo
 
             if (input.peekSep(",")) 
             {
-                exprs ~= new IdentExpr("undefined", input.getPos());
+                exprs ~= new ASTNode("undefined", input.getPos());
                 continue;
             }
         }
@@ -1086,11 +1077,11 @@ ASTNode[] parseExprList(TokenStream& input, std::string openSep, std::string clo
 /**
 Parse a function declaration's parameter list
 */
-IdentExpr[] parseParamList(TokenStream& input)
+ASTNode[] parseParamList(TokenStream& input)
 {
     input.readSep("(");
 
-    IdentExpr[] exprs;
+    ASTNode[] exprs;
 
     for (;;)
     {
@@ -1101,7 +1092,7 @@ IdentExpr[] parseParamList(TokenStream& input)
             throw new ParseError("expected comma", input.getPos());
 
         auto expr = parseAtom(input);
-        auto ident = cast(IdentExpr)expr;
+        auto ident = cast(ASTNode)expr;
         if (ident is null)
             throw new ParseError("invalid parameter", expr.pos);
 
@@ -1110,6 +1101,8 @@ IdentExpr[] parseParamList(TokenStream& input)
 
     return exprs;
 }
+
+}; // struct Parser
 
 } // namespace Almond
 
