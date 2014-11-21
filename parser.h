@@ -325,13 +325,11 @@ ASTNode parseStmt(TokenStream& input)
         input.readSep(")");
         input.readSep("{");
 
-        ASTNode[] caseExprs = [];
-        ASTNode[][] caseStmts = [];
-
         bool defaultSeen = false;
-        ASTNode[] defaultStmts = [];
+        ASTNode defaultStmts = nullptr; // MAKE list
 
-        ASTNode[]* curStmts = null;
+        printf("switch\n");
+        ASTNode switch = nullptr; // MAKE switch
 
         // For each case
         for (;;)
@@ -343,11 +341,11 @@ ASTNode parseStmt(TokenStream& input)
 
             else if (input.matchKw("case"))
             {
-                caseExprs ~= [parseExpr(input)];
+                ASTNode caseExpr = parseExpr(input);
                 input.readSep(":");
 
-                caseStmts ~= [[]];
-                curStmts = &caseStmts[caseStmts.length-1];
+                printf("  switch case\n");
+                // ADD SWITCH CASE
             }
 
             else if (input.matchKw("default"))
@@ -357,25 +355,22 @@ ASTNode parseStmt(TokenStream& input)
                     throw new ParseError("duplicate default label", input.getPos());
 
                 defaultSeen = true;
-                curStmts = &defaultStmts;
+                printf("  switch default\n");
+                // ADD SWITCH DEFAULT
             }
 
             else
             {
-                if (curStmts is null)
+                if (!curStmts)
                     throw new ParseError("statement before label", input.getPos());
 
-                (*curStmts).assumeSafeAppend() ~= parseStmt(input);
+                printf("  switch code\n");
+                ASTNode statment = parseStmt(input);
+                // ADD STATEMENT TO (currently-tracked) SWITCH CASE
             }
         }
 
-        return new SwitchStmt(
-            switchExpr, 
-            caseExprs,
-            caseStmts,
-            defaultStmts,
-            pos
-        );
+        return nullptr;
     }
 
     // Break statement
