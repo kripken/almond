@@ -652,8 +652,6 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
     // If an operator has the mininum precedence or greater, it will
     // associate the current atom to its left and then parse the rhs
 
-    //writeln("parseExpr");
-
     // Parse the first atom
     ASTNode lhsExpr = parseAtom(input);
 
@@ -670,30 +668,28 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
 
         // Attempt to find a corresponding operator
         auto op = findOperator(cur.stringVal, 2);
-        if (op is null)
+        if (!op)
             op = findOperator(cur.stringVal, 1, 'l');
-        if (op is null && cur.stringVal == "?")
+        if (!op && cur.stringVal == "?")
             op = findOperator(cur.stringVal, 3);
 
         // If no operator matches, break out
-        if (op is null)
+        if (!op)
             break;
 
         // If the new operator has lower precedence, break out
         if (op.prec < minPrec)
             break;
 
-        //writefln("binary op: %s", cur.stringVal);
-
         // Compute the minimal precedence for the recursive call (if any)
-        int nextMinPrec = (op.assoc == 'l')? (op.prec + 1):op.prec;
+        int nextMinPrec = (op.assoc == 'l') ? (op.prec + 1) : op.prec;
 
         // If this is a function call expression
         if (cur.stringVal == "(")
         {
             // Parse the argument list and create the call expression
             auto argExprs = parseExprList(input, "(", ")");
-            lhsExpr = new CallExpr(lhsExpr, argExprs, lhsExpr.pos);
+            lhsExpr = Builder.makeCall(lhsExpr, argExprs, lhsExpr.pos);
         }
 
         // If this is an array indexing expression
@@ -701,7 +697,7 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
         {
             auto indexExpr = parseExpr(input);
             input.readSep("]");
-            lhsExpr = new IndexExpr(lhsExpr, indexExpr, lhsExpr.pos);
+            lhsExpr = Builder.makeSub(lhsExpr, indexExpr, lhsExpr.pos);
         }
 
         // If this is a member expression
@@ -711,19 +707,18 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
 
             // Parse the identifier string
             auto tok = input.read();
-            if (!(tok.type is Token.IDENT) &&
-                !(tok.type is Token.KEYWORD) &&
-                !(tok.type is Token.OP && ident(tok.stringVal)))
+            if (!(tok.type == Token.IDENT) &&
+                !(tok.type == Token.KEYWORD) &&
+                !(tok.type == Token.OP && ident(tok.stringVal)))
             {
                 throw new ParseError(
                     "invalid member identifier \"" ~ tok.toString() ~ "\"", 
                     tok.pos
                 );
             }
-            auto stringExpr = new StringExpr(tok.stringVal, tok.pos);
 
             // Produce an indexing expression
-            lhsExpr = new IndexExpr(lhsExpr, stringExpr, lhsExpr.pos);
+            lhsExpr = Builder.makeIndex(lhsExpr, tok.stringVal, lhsExpr.pos);
         }
 
         // If this is the ternary conditional operator
@@ -736,7 +731,7 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
             input.readSep(":");
             auto falseExpr = parseExpr(input, op.prec-1);
 
-            lhsExpr = new CondExpr(lhsExpr, trueExpr, falseExpr, lhsExpr.pos);
+            lhsExpr = Builder.makeConditional(lhsExpr, trueExpr, falseExpr, lhsExpr.pos);
         }
 
         // If this is a binary operator
