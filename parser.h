@@ -440,12 +440,15 @@ ASTNode parseStmt(TokenStream& input)
     {
         ASTNode[] identExprs = [];
         ASTNode[] initExprs = [];
+        bool firstIdent = true;
+
+        ASTNode vars = Builder.makeVars();
 
         // For each declaration
         for (;;)
         {
             // If this is not the first declaration and there is no comma
-            if (identExprs.length > 0 && input.matchSep(",") == false)
+            if (!firstIdent && input.matchSep(",") == false)
             {
                 readSemiAuto(input);
                 break;
@@ -461,7 +464,7 @@ ASTNode parseStmt(TokenStream& input)
             }
             ASTNode identExpr = new ASTNode(name.stringVal, name.pos);
 
-            ASTNode initExpr = null;
+            ASTNode initExpr = nullptr;
             auto op = input.peek();
 
             if (op.type == Token.OP && op.stringVal == "=")
@@ -470,19 +473,11 @@ ASTNode parseStmt(TokenStream& input)
                 initExpr = parseExpr(input, COMMA_PREC+1);
             }
 
-            // If this is an assignment of an unnamed function to 
-            // a variable, assign the function a name
-            if (auto funExpr = cast(FunExpr)initExpr)
-            {
-                if (funExpr.name is null)
-                    funExpr.name = identExpr;
-            }
-
-            identExprs ~= [identExpr];
-            initExprs ~= [initExpr];
+            Builder.appendVar(vars, name.stringVal.c_str(), initExpr);
+            firstIdent = false;
         }
 
-        return new VarStmt(identExprs, initExprs, pos);
+        return vars;
     }
 
     // Function declaration statement
@@ -494,18 +489,18 @@ ASTNode parseStmt(TokenStream& input)
         if (input.peekSep(";"))
             input.read();
 
-        return new ExprStmt(funExpr, pos);
+        return funExpr;
     }
 
     // If this is a labelled statement
     else if (isLabel(input))
     {
-        auto label = cast(ASTNode)parseAtom(input);
+        auto label = input.read();
+        assert(t.type == Token.IDENT);
         input.readSep(":");
         auto stmt = parseStmt(input);
-        stmt.labels ~= label;
 
-        return stmt;
+        return Builder.makeLabel(label.stringVal.c_str(), stmt);
     }
 
     // Peek at the token at the start of the expression
@@ -529,7 +524,7 @@ ASTNode parseStmt(TokenStream& input)
     // Read the terminating semicolon
     readSemiAuto(input);
 
-    return new ExprStmt(expr, pos);
+    return expr;
 }
 
 /**
