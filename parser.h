@@ -37,8 +37,6 @@
 
 namespace almond {
 
-typedef void* ASTNode;
-
 /**
 Parsing error exception
 */
@@ -60,7 +58,7 @@ struct ParseError
     }
 };
 
-template<class Builder>
+template<class ASTNode, class Builder>
 struct Parser {
 
 /**
@@ -124,14 +122,14 @@ void readSemiAuto(TokenStream& input)
 /**
 Read an identifier token from the input
 */
-ASTNode readIdent(TokenStream& input)
+ASTNode* readIdent(TokenStream& input)
 {
     auto t = input.read();
 
     if (t->type != Token::IDENT)
         throw new ParseError("expected identifier", t->pos);
 
-    ASTNode ret = Builder::makeName(t->stringVal.c_str());
+    ASTNode* ret = Builder::makeName(t->stringVal.c_str());
     // XXX leak    delete t;
     return ret;
 }
@@ -139,7 +137,7 @@ ASTNode readIdent(TokenStream& input)
 /**
 Parse a source file
 */
-ASTNode parseFile(std::string fileName, char *src, bool isRuntime = false)
+ASTNode* parseFile(std::string fileName, char *src, bool isRuntime = false)
 {
     StrStream strStream(src, fileName);
 
@@ -176,7 +174,7 @@ ASTNode parseFile(std::string fileName, char *src, bool isRuntime = false)
 /**
 Parse a source string
 */
-ASTNode parseString(char* src, std::string fileName = "", bool isRuntime = false)
+ASTNode* parseString(char* src, std::string fileName = "", bool isRuntime = false)
 {
     StrStream strStream(src, fileName);
     TokenStream input(&strStream);
@@ -187,15 +185,15 @@ ASTNode parseString(char* src, std::string fileName = "", bool isRuntime = false
 /**
 Parse a top-level program node
 */
-ASTNode parseProgram(TokenStream& input, bool isRuntime)
+ASTNode* parseProgram(TokenStream& input, bool isRuntime)
 {
     SrcPos* pos = input.getPos();
 
-    ASTNode program = Builder::makeToplevel();
+    ASTNode* program = Builder::makeToplevel();
 
     while (!input.eof())
     {
-        ASTNode stmt = parseStmt(input);
+        ASTNode* stmt = parseStmt(input);
         Builder::appendStatement(program, stmt);
     }
 
@@ -212,7 +210,7 @@ public:
 /**
 Parse a statement
 */
-ASTNode parseStmt(TokenStream& input)
+ASTNode* parseStmt(TokenStream& input)
 {
     /// Test if this is a label statement and backtrack
     auto isLabel = [](TokenStream& input)
@@ -245,7 +243,7 @@ ASTNode parseStmt(TokenStream& input)
     // Block statement
     else if (input.matchSep("{"))
     {
-        ASTNode stmts = nullptr; // MAKE block
+        ASTNode* stmts = nullptr; // MAKE block
 
         for (;;)
         {
@@ -270,18 +268,18 @@ ASTNode parseStmt(TokenStream& input)
     else if (input.matchKw("if"))
     {
         readSep(input, "(");
-        ASTNode testExpr = parseExpr(input);
+        ASTNode* testExpr = parseExpr(input);
         readSep(input, ")");
 
         auto trueStmt = parseStmt(input);
 
-        ASTNode falseStmt;
+        ASTNode* falseStmt;
         if (input.matchKw("else"))
             falseStmt = parseStmt(input);
         else
             falseStmt = nullptr;
 
-        return Builder::makeIf(testExpr, trueStmt, falseStmt, pos);
+        return Builder::makeIf(testExpr, trueStmt, falseStmt);
     }
 
     // While loop
@@ -292,7 +290,7 @@ ASTNode parseStmt(TokenStream& input)
         readSep(input, ")");
         auto bodyStmt = parseStmt(input);
 
-        return Builder::makeWhile(testExpr, bodyStmt, pos);
+        return Builder::makeWhile(testExpr, bodyStmt);
     }
 
     // Do-while loop
@@ -305,7 +303,7 @@ ASTNode parseStmt(TokenStream& input)
         auto testExpr = parseExpr(input);
         readSep(input, ")");
 
-        return Builder::makeDo(bodyStmt, testExpr, pos);
+        return Builder::makeDo(bodyStmt, testExpr);
     }
 
     // For or for-in loop
@@ -325,7 +323,7 @@ ASTNode parseStmt(TokenStream& input)
         bool defaultSeen = false;
 
         printf("switch\n");
-        ASTNode switch_ = Builder::makeSwitch(switchExpr);
+        ASTNode* switch_ = Builder::makeSwitch(switchExpr);
 
         // For each case
         for (;;)
@@ -337,7 +335,7 @@ ASTNode parseStmt(TokenStream& input)
 
             else if (input.matchKw("case"))
             {
-                ASTNode caseExpr = parseExpr(input);
+                ASTNode* caseExpr = parseExpr(input);
                 readSep(input, ":");
 
                 Builder::appendSwitchCase(switch_, caseExpr);
@@ -355,7 +353,7 @@ ASTNode parseStmt(TokenStream& input)
 
             else
             {
-                ASTNode statement = parseStmt(input);
+                ASTNode* statement = parseStmt(input);
                 Builder::appendSwitchStatement(switch_, statement);
             }
         }
@@ -385,7 +383,7 @@ ASTNode parseStmt(TokenStream& input)
         if (input.matchSep(";") || peekSemiAuto(input))
             return Builder::makeReturn(nullptr);
 
-        ASTNode expr = parseExpr(input);
+        ASTNode* expr = parseExpr(input);
         readSemiAuto(input);
         return Builder::makeReturn(expr);
     }
@@ -393,9 +391,9 @@ ASTNode parseStmt(TokenStream& input)
     // Throw statement
     else if (input.matchKw("throw"))
     {
-        ASTNode expr = parseExpr(input);
+        ASTNode* expr = parseExpr(input);
         readSemiAuto(input);
-        return Builder::makeThrow(expr, pos);
+        return Builder::makeThrow(expr);
     }
 
     // Try-catch-finally statement
@@ -403,8 +401,8 @@ ASTNode parseStmt(TokenStream& input)
     {
         auto tryStmt = parseStmt(input);
 
-        ASTNode catchIdent = nullptr;
-        ASTNode catchStmt = nullptr;
+        ASTNode* catchIdent = nullptr;
+        ASTNode* catchStmt = nullptr;
         if (input.matchKw("catch"))
         {
             readSep(input, "(");
@@ -415,7 +413,7 @@ ASTNode parseStmt(TokenStream& input)
             catchStmt = parseStmt(input);
         }
 
-        ASTNode finallyStmt = nullptr;
+        ASTNode* finallyStmt = nullptr;
         if (input.matchKw("finally"))
         {
             finallyStmt = parseStmt(input);
@@ -437,7 +435,7 @@ ASTNode parseStmt(TokenStream& input)
     {
         bool firstIdent = true;
 
-        ASTNode vars = Builder::makeVars();
+        ASTNode* vars = Builder::makeVars();
 
         // For each declaration
         for (;;)
@@ -458,7 +456,7 @@ ASTNode parseStmt(TokenStream& input)
                 );
             }
 
-            ASTNode initExpr = nullptr;
+            ASTNode* initExpr = nullptr;
             auto op = input.peek();
 
             if (op->type == Token::OP && op->stringVal == "=")
@@ -501,7 +499,7 @@ ASTNode parseStmt(TokenStream& input)
     auto startTok = input.peek();
 
     // Parse as an expression statement
-    ASTNode expr = parseExpr(input);
+    ASTNode* expr = parseExpr(input);
 
     // Peek at the token after the expression
     auto endTok = input.peek();
@@ -524,7 +522,7 @@ ASTNode parseStmt(TokenStream& input)
 /**
 Parse a for or for-in loop statement
 */
-ASTNode parseForStmt(TokenStream& input)
+ASTNode* parseForStmt(TokenStream& input)
 {
     /// Test if this is a for-in statement and backtrack
     auto isForIn = [&](TokenStream& input)
@@ -572,7 +570,7 @@ ASTNode parseForStmt(TokenStream& input)
 
         // Parse the test expression
         pos = input.getPos();
-        ASTNode testExpr;
+        ASTNode* testExpr;
         if (input.matchSep(";"))
         {
             testExpr = nullptr;
@@ -585,7 +583,7 @@ ASTNode parseForStmt(TokenStream& input)
 
         // Parse the inccrement expression
         pos = input.getPos();
-        ASTNode incrExpr;
+        ASTNode* incrExpr;
         if (input.matchSep(")"))
         {
             incrExpr = nullptr;
@@ -629,7 +627,7 @@ ASTNode parseForStmt(TokenStream& input)
 /**
 Parse an expression
 */
-ASTNode parseExpr(TokenStream& input, int minPrec = 0)
+ASTNode* parseExpr(TokenStream& input, int minPrec = 0)
 {
     // Expression parsing using the precedence climbing algorithm
     //    
@@ -647,7 +645,7 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
     // associate the current atom to its left and then parse the rhs
 
     // Parse the first atom
-    ASTNode lhsExpr = parseAtom(input);
+    ASTNode* lhsExpr = parseAtom(input);
 
     for (;;)
     {
@@ -735,7 +733,7 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
             input.read();
 
             // Recursively parse the rhs
-            ASTNode rhsExpr = parseExpr(input, nextMinPrec);
+            ASTNode* rhsExpr = parseExpr(input, nextMinPrec);
 
             // Convert expressions of the form "x <op>= y" to "x = x <op> y" // XXX
             auto eqOp = findOperator("=", 2, 'r');
@@ -774,7 +772,7 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
 /**
 Parse an atomic expression
 */
-ASTNode parseAtom(TokenStream& input)
+ASTNode* parseAtom(TokenStream& input)
 {
     auto t = input.peek(LEX_MAYBE_RE);
     SrcPos* pos = t->pos;
@@ -788,7 +786,7 @@ ASTNode parseAtom(TokenStream& input)
     // Parenthesized expression
     else if (input.matchSep("("))
     {
-        ASTNode expr = parseExpr(input);
+        ASTNode* expr = parseExpr(input);
         readSep(input, ")");
         return expr;
     }
@@ -806,7 +804,7 @@ ASTNode parseAtom(TokenStream& input)
         assert(0);
         /*
         StringExpr[] names = [];
-        ASTNode[] values = [];
+        ASTNode*[] values = [];
 
         // For each property
         for (;;)
@@ -958,7 +956,7 @@ ASTNode parseAtom(TokenStream& input)
         input.read();
 
         // Parse the right subexpression
-        ASTNode expr = parseExpr(input, op->prec);
+        ASTNode* expr = parseExpr(input, op->prec);
 
         // Return the unary expression
         return Builder::makeUnary(op, expr, pos);
@@ -970,11 +968,11 @@ ASTNode parseAtom(TokenStream& input)
 /**
 Parse a list of expressions
 */
-ASTNode parseExprList(TokenStream& input, std::string openSep, std::string closeSep)
+ASTNode* parseExprList(TokenStream& input, std::string openSep, std::string closeSep)
 {
     readSep(input, openSep);
 
-    ASTNode exprs = Builder::makeList();
+    ASTNode* exprs = Builder::makeList();
 
     for (;;)
     {
@@ -1009,11 +1007,11 @@ ASTNode parseExprList(TokenStream& input, std::string openSep, std::string close
 /**
 Parse a function declaration's parameter list
 */
-ASTNode parseParamList(TokenStream& input)
+ASTNode* parseParamList(TokenStream& input)
 {
     readSep(input, "(");
 
-    ASTNode exprs = Builder::makeList();
+    ASTNode* exprs = Builder::makeList();
 
     for (;;)
     {
