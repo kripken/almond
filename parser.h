@@ -35,6 +35,8 @@
 *
 *****************************************************************************/
 
+namespace Almond {
+
 typedef void* ASTNode;
 
 /**
@@ -47,7 +49,7 @@ struct ParseError
     /// Source position
     SrcPos* pos;
 
-    ParseError(string msg, SrcPos pos_) : msg(msg_), pos(pos_)
+    ParseError(std::string msg, SrcPos pos_) : msg(msg_), pos(pos_)
     {
         assert (pos); // "source position is null");
     }
@@ -126,7 +128,7 @@ ASTNode readIdent(TokenStream& input)
     if (t.type != Token.IDENT)
         throw new ParseError("expected identifier", t.pos);
 
-    // MAKE IDENT
+    // callback to MAKE IDENT
     printf("make ident %s", t->stringVal.c_str());
     //delete t;
     return nullptr;
@@ -135,14 +137,9 @@ ASTNode readIdent(TokenStream& input)
 /**
 Parse a source file
 */
-ASTProgram parseFile(string fileName, bool isRuntime = false)
+ASTNode parseFile(std::string fileName, char *src, bool isRuntime = false)
 {
-    string src = readText!(string)(fileName);
-
-    // Convert the string to UTF-16
-    std::string wSrc = toUTF16(src);
-
-    auto strStream = StrStream(wSrc, fileName);
+    StrStream strStream(src, fileName);
 
     // If there is a shebang line at the beginning of the file
     if (strStream.match("#!"))
@@ -177,12 +174,10 @@ ASTProgram parseFile(string fileName, bool isRuntime = false)
 /**
 Parse a source string
 */
-ASTProgram parseString(string src, string fileName = "", bool isRuntime = false)
+ASTNode parseString(char* src, std::string fileName = "", bool isRuntime = false)
 {
-    // Convert the string to UTF-16
-    std::string wSrc = toUTF16(src);
-
-    auto input = new TokenStream(StrStream(wSrc, fileName));
+    StrStream strStream(src, fileName);
+    TokenStream input(strStream);
 
     return parseProgram(input, isRuntime);
 }
@@ -190,57 +185,25 @@ ASTProgram parseString(string src, string fileName = "", bool isRuntime = false)
 /**
 Parse a top-level program node
 */
-ASTProgram parseProgram(TokenStream& input, bool isRuntime)
+ASTNode parseProgram(TokenStream& input, bool isRuntime)
 {
-    SrcPos pos = input.getPos();
+    SrcPos* pos = input.getPos();
 
-    auto stmtApp = appender!(ASTStmt[])();
+    ASTNode program = nullptr; // MAKE NODE
 
-    while (input.eof() == false)
+    while (!input.eof())
     {
-        ASTStmt stmt = parseStmt(input);
-        stmtApp.put(stmt);
+        ASTNode stmt = parseStmt(input);
+        printf("make append a stat\n"); // MAKE APPEND(program, statement)
     }
 
-    // Create the AST program node
-    auto ast = new ASTProgram(stmtApp.data, pos, isRuntime);
-
-    // Transform single expression statements into return statements
-    void makeReturn(ASTStmt stmt)
-    {
-        auto blockStmt = cast(BlockStmt)ast.bodyStmt;
-        if (blockStmt is null || blockStmt.stmts.length == 0)
-            return;
-
-        auto exprStmt = cast(ExprStmt)blockStmt.stmts[$-1];
-        if (exprStmt is null)
-            return;
-
-        // If this is a named function, don't transform
-        auto funExpr = cast(FunExpr)exprStmt.expr;
-        if (funExpr && funExpr.name !is null)
-            return;
-
-        blockStmt.stmts[$-1] = new ReturnStmt(
-            exprStmt.expr,
-            exprStmt.pos
-        );
-    }
-
-    // If the AST contains only an expression statement,
-    // turn it into a return statement
-    makeReturn(ast.bodyStmt);
-
-    // Resolve variable declarations in the AST
-    resolveVars(ast);
-
-    return ast;
+    return program;
 }
 
 /**
 Parse a statement
 */
-ASTStmt parseStmt(TokenStream& input)
+ASTNode parseStmt(TokenStream& input)
 {
     //writeln("parseStmt");
 
@@ -274,7 +237,7 @@ ASTStmt parseStmt(TokenStream& input)
     // Block statement
     else if (input.matchSep("{"))
     {
-        ASTStmt[] stmts;
+        ASTNode[] stmts;
 
         for (;;)
         {
@@ -304,7 +267,7 @@ ASTStmt parseStmt(TokenStream& input)
 
         auto trueStmt = parseStmt(input);
 
-        ASTStmt falseStmt;
+        ASTNode falseStmt;
         if (input.matchKw("else"))
             falseStmt = parseStmt(input);
         else
@@ -352,12 +315,12 @@ ASTStmt parseStmt(TokenStream& input)
         input.readSep("{");
 
         ASTExpr[] caseExprs = [];
-        ASTStmt[][] caseStmts = [];
+        ASTNode[][] caseStmts = [];
 
         bool defaultSeen = false;
-        ASTStmt[] defaultStmts = [];
+        ASTNode[] defaultStmts = [];
 
-        ASTStmt[]* curStmts = null;
+        ASTNode[]* curStmts = null;
 
         // For each case
         for (;;)
@@ -445,7 +408,7 @@ ASTStmt parseStmt(TokenStream& input)
         auto tryStmt = parseStmt(input);
 
         IdentExpr catchIdent = null;
-        ASTStmt catchStmt = null;
+        ASTNode catchStmt = null;
         if (input.matchKw("catch"))
         {
             input.readSep("(");
@@ -456,7 +419,7 @@ ASTStmt parseStmt(TokenStream& input)
             catchStmt = parseStmt(input);
         }
 
-        ASTStmt finallyStmt = null;
+        ASTNode finallyStmt = null;
         if (input.matchKw("finally"))
         {
             finallyStmt = parseStmt(input);
@@ -573,7 +536,7 @@ ASTStmt parseStmt(TokenStream& input)
 /**
 Parse a for or for-in loop statement
 */
-ASTStmt parseForStmt(TokenStream& input)
+ASTNode parseForStmt(TokenStream& input)
 {
     /// Test if this is a for-in statement and backtrack
     bool isForIn(TokenStream& input)
@@ -1139,4 +1102,6 @@ IdentExpr[] parseParamList(TokenStream& input)
 
     return exprs;
 }
+
+} // namespace Almond
 
