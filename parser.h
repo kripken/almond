@@ -803,12 +803,14 @@ ASTNode parseAtom(TokenStream& input)
     else if (t.type == Token.SEP && t.stringVal == "[")
     {
         auto exprs = parseExprList(input, "[", "]");
-        return new ArrayExpr(exprs, pos);
+        return Builder.makeArray(exprs, pos);
     }
 
     // Object literal
     else if (input.matchSep("{"))
     {
+        assert(0);
+        /*
         StringExpr[] names = [];
         ASTNode[] values = [];
 
@@ -854,13 +856,17 @@ ASTNode parseAtom(TokenStream& input)
         }
 
         return new ObjectExpr(names, values, pos);
+        */
     }
 
     // Regular expression literal
     else if (t.type == Token.REGEXP)
     {
+        assert(0);
+        /*
         input.read();
         return new RegexpExpr(t.regexpVal, t.flagsVal, pos);
+        */
     }
 
     // New expression
@@ -874,10 +880,10 @@ ASTNode parseAtom(TokenStream& input)
         auto baseExpr = parseExpr(input, op.prec);
 
         // Parse the argument list (if present, otherwise assumed empty)
-        auto argExprs = input.peekSep("(")? parseExprList(input, "(", ")"):[];
+        auto argExprs = input.peekSep("(") ? parseExprList(input, "(", ")") : nullptr;
 
         // Create the new expression
-        return new NewExpr(baseExpr, argExprs, t.pos);
+        return Builder.makeNew(baseExpr, argExprs, t.pos);
     }
 
     // Function expression
@@ -885,69 +891,66 @@ ASTNode parseAtom(TokenStream& input)
     else if (input.matchKw("function"))
     {
         auto nextTok = input.peek();
-        auto nameExpr = (nextTok.type != Token.SEP)? parseAtom(input):null;
-        auto funcName = cast(ASTNode)nameExpr;
-        if (nameExpr && !funcName)
+        auto nameExpr = (nextTok.type != Token.SEP) ? parseAtom(input) : nullptr;
+        if (nameExpr && !Builder.isName(nameExpr))
             throw new ParseError("invalid function name", nameExpr.pos);
 
         auto params = parseParamList(input);
 
         auto bodyStmt = parseStmt(input);
 
-        return new FunExpr(funcName, params, bodyStmt, pos);
+        return Builder.makeFun(nameExpr, params, bodyStmt, pos);
     }
 
     // Identifier/symbol literal
     else if (t.type == Token.IDENT)
     {
         input.read();
-        return new ASTNode(t.stringVal, pos);
+        return Builder.makeName(t.stringVal, pos);
     }
 
     // Integer literal
     else if (t.type == Token.INT)
     {
         input.read();
-        return new IntExpr(t.intVal, pos);
+        return Builder.makeNum(t.intVal, pos);
     }
 
     // Floating-point literal
     else if (t.type == Token.FLOAT)
     {
         input.read();
-        return new FloatExpr(t.floatVal, pos);
+        return Builder.makeNum(t.floatVal, pos);
     }
 
     // String literal
     else if (t.type == Token.STRING)
     {
         input.read();
-        return new StringExpr(t.stringVal, pos);
+        return Builder.makeString(t.stringVal, pos);
     }
 
     // True boolean constant
     else if (input.matchKw("true"))
     {
-        return new TrueExpr(pos);
+        return Builder.makeBool(true, pos);
     }
 
     // False boolean constant
     else if (input.matchKw("false"))
     {
-        return new FalseExpr(pos);
+        return Builder.makeBool(false, pos);
     }
 
     // Null constant
     else if (input.matchKw("null"))
     {
-        return new NullExpr(pos);
+        return Builder.makeNull(pos);
     }
 
     // Unary expressions
     else if (t.type == Token.OP)
     {
-        //writefln("unary op: %s", t.stringVal);
-
         auto op = findOperator(t.stringVal, 1, 'r');
         if (!op)
         {
@@ -963,22 +966,8 @@ ASTNode parseAtom(TokenStream& input)
         // Parse the right subexpression
         ASTNode expr = parseExpr(input, op.prec);
 
-        // If this is a negated integer
-        if (op.str == "-"w)
-        {
-            if (auto intExpr = cast(IntExpr)expr)
-            {
-                // Negative zero cannot be represented as integer
-                if (intExpr.val is 0)
-                    return new FloatExpr(-0.0, intExpr.pos);
-
-                // Negate the integer value
-                return new IntExpr(-intExpr.val, intExpr.pos);
-            }
-        }
-
         // Return the unary expression
-        return new UnOpExpr(op, expr, pos);
+        return Builder.makeUnary(op, expr, pos);
     }
 
     throw new ParseError("unexpected token: " ~ t.toString(), pos);
