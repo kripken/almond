@@ -444,6 +444,16 @@ struct Token
         };
     };
 
+    bool operator=(Token& other)
+    {
+        if (type != other.type) return false;
+        if (type == INT) return intVal == other.intVal;
+        if (type == FLOAT) return floatVal == other.floatVal;
+        if (type == STRING) return stringVal == other.stringVal;
+        if (type == REGEXP) return regexpVal == other.regexpVal && flagsVal == other.flagsVal;
+        return true;
+    }
+
     /// Source position
     SrcPos* pos;
 

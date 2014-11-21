@@ -35,7 +35,7 @@
 *
 *****************************************************************************/
 
-namespace Almond {
+namespace almond {
 
 typedef void* ASTNode;
 
@@ -49,7 +49,7 @@ struct ParseError
     /// Source position
     SrcPos* pos;
 
-    ParseError(std::string msg, SrcPos pos_) : msg(msg_), pos(pos_)
+    ParseError(std::string msg_, SrcPos* pos_) : msg(msg_), pos(pos_)
     {
         assert (pos); // "source position is null");
     }
@@ -58,7 +58,7 @@ struct ParseError
     {
         return "ParseError: " + msg;
     }
-}
+};
 
 template<class Builder>
 struct Parser {
@@ -128,11 +128,11 @@ ASTNode readIdent(TokenStream& input)
 {
     auto t = input.read();
 
-    if (t.type != Token.IDENT)
-        throw new ParseError("expected identifier", t.pos);
+    if (t->type != Token::IDENT)
+        throw new ParseError("expected identifier", t->pos);
 
-    ASTNode ret = Builder.makeIdent(t->stringVal.c_str());
-    delete t;
+    ASTNode ret = Builder::makeName(t->stringVal.c_str());
+    // XXX leak    delete t;
     return ret;
 }
 
@@ -168,7 +168,7 @@ ASTNode parseFile(std::string fileName, char *src, bool isRuntime = false)
         }
     }
 
-    TokenStream input(strStream);
+    TokenStream input(&strStream);
 
     return parseProgram(input, isRuntime);
 }
@@ -179,7 +179,7 @@ Parse a source string
 ASTNode parseString(char* src, std::string fileName = "", bool isRuntime = false)
 {
     StrStream strStream(src, fileName);
-    TokenStream input(strStream);
+    TokenStream input(&strStream);
 
     return parseProgram(input, isRuntime);
 }
@@ -191,12 +191,12 @@ ASTNode parseProgram(TokenStream& input, bool isRuntime)
 {
     SrcPos* pos = input.getPos();
 
-    ASTNode program = Builder.makeToplevel();
+    ASTNode program = Builder::makeToplevel();
 
     while (!input.eof())
     {
         ASTNode stmt = parseStmt(input);
-        Builder.appendStatement(program, stmt);
+        Builder::appendStatement(program, stmt);
     }
 
     return program;
@@ -226,7 +226,7 @@ ASTNode parseStmt(TokenStream& input)
         });
 
         auto t = input.peek();
-        if (t->type != Token.IDENT)
+        if (t->type != Token::IDENT)
             return false;
         input.read();
 
@@ -239,7 +239,7 @@ ASTNode parseStmt(TokenStream& input)
     // Empty statement
     if (input.matchSep(";"))
     {
-        return Builder.makeEmpty();
+        return Builder::makeEmpty();
     }
 
     // Block statement
@@ -260,7 +260,7 @@ ASTNode parseStmt(TokenStream& input)
                 );
             }
 
-            Builder.appendStatement(stmts, parseStmt(input));
+            Builder::appendStatement(stmts, parseStmt(input));
         }
 
         return stmts;
@@ -269,9 +269,9 @@ ASTNode parseStmt(TokenStream& input)
     // If statement
     else if (input.matchKw("if"))
     {
-        input.readSep("(");
+        readSep(input, "(");
         ASTNode testExpr = parseExpr(input);
-        input.readSep(")");
+        readSep(input, ")");
 
         auto trueStmt = parseStmt(input);
 
@@ -281,18 +281,18 @@ ASTNode parseStmt(TokenStream& input)
         else
             falseStmt = nullptr;
 
-        return Builder.makeIf(testExpr, trueStmt, falseStmt, pos);
+        return Builder::makeIf(testExpr, trueStmt, falseStmt, pos);
     }
 
     // While loop
     else if (input.matchKw("while"))
     {
-        input.readSep("(");
+        readSep(input, "(");
         auto testExpr = parseExpr(input);
-        input.readSep(")");
+        readSep(input, ")");
         auto bodyStmt = parseStmt(input);
 
-        return Builder.makeWhile(testExpr, bodyStmt, pos);
+        return Builder::makeWhile(testExpr, bodyStmt, pos);
     }
 
     // Do-while loop
@@ -301,11 +301,11 @@ ASTNode parseStmt(TokenStream& input)
         auto bodyStmt = parseStmt(input);
         if (input.matchKw("while") == false)
             throw new ParseError("expected while", input.getPos());
-        input.readSep("(");
+        readSep(input, "(");
         auto testExpr = parseExpr(input);
-        input.readSep(")");
+        readSep(input, ")");
 
-        return Builder.makeDo(bodyStmt, testExpr, pos);
+        return Builder::makeDo(bodyStmt, testExpr, pos);
     }
 
     // For or for-in loop
@@ -317,15 +317,15 @@ ASTNode parseStmt(TokenStream& input)
     // Switch statement
     else if (input.matchKw("switch"))
     {
-        input.readSep("(");
+        readSep(input, "(");
         auto switchExpr = parseExpr(input);
-        input.readSep(")");
-        input.readSep("{");
+        readSep(input, ")");
+        readSep(input, "{");
 
         bool defaultSeen = false;
 
         printf("switch\n");
-        ASTNode switch_ = Builder.makeSwitch(switchExpr);
+        ASTNode switch_ = Builder::makeSwitch(switchExpr);
 
         // For each case
         for (;;)
@@ -338,28 +338,25 @@ ASTNode parseStmt(TokenStream& input)
             else if (input.matchKw("case"))
             {
                 ASTNode caseExpr = parseExpr(input);
-                input.readSep(":");
+                readSep(input, ":");
 
-                Builder.appendSwitchCase(switch_, caseExpr);
+                Builder::appendSwitchCase(switch_, caseExpr);
             }
 
             else if (input.matchKw("default"))
             {
-                input.readSep(":");
-                if (defaultSeen is true)
+                readSep(input, ":");
+                if (defaultSeen)
                     throw new ParseError("duplicate default label", input.getPos());
 
                 defaultSeen = true;
-                Builder.appendSwitchDefault(switch_);
+                Builder::appendSwitchDefault(switch_);
             }
 
             else
             {
-                if (!curStmts)
-                    throw new ParseError("statement before label", input.getPos());
-
-                ASTNode statment = parseStmt(input);
-                Builder.appendSwitchStatement(switch_, statement);
+                ASTNode statement = parseStmt(input);
+                Builder::appendSwitchStatement(switch_, statement);
             }
         }
 
@@ -369,28 +366,28 @@ ASTNode parseStmt(TokenStream& input)
     // Break statement
     else if (input.matchKw("break"))
     {
-        auto label = input.peekSemiAuto() ? nullptr : input.readIdent();
+        auto label = peekSemiAuto(input) ? nullptr : readIdent(input);
         readSemiAuto(input);
-        return Builder.makeBreak(label);
+        return Builder::makeBreak(label);
     }
 
     // Continue statement
     else if (input.matchKw("continue"))
     {
-        auto label = input.peekSemiAuto() ? nullptr : input.readIdent();
+        auto label = peekSemiAuto(input) ? nullptr : readIdent(input);
         readSemiAuto(input);
-        return Builder.makeContinue(label);
+        return Builder::makeContinue(label);
     }
 
     // Return statement
     else if (input.matchKw("return"))
     {
-        if (input.matchSep(";") || input.peekSemiAuto())
-            return Builder.makeReturn(nullptr);
+        if (input.matchSep(";") || peekSemiAuto(input))
+            return Builder::makeReturn(nullptr);
 
         ASTNode expr = parseExpr(input);
         readSemiAuto(input);
-        return Builder.makeReturn(expr);
+        return Builder::makeReturn(expr);
     }
 
     // Throw statement
@@ -398,7 +395,7 @@ ASTNode parseStmt(TokenStream& input)
     {
         ASTNode expr = parseExpr(input);
         readSemiAuto(input);
-        return Builder.makeThrow(expr, pos);
+        return Builder::makeThrow(expr, pos);
     }
 
     // Try-catch-finally statement
@@ -406,19 +403,19 @@ ASTNode parseStmt(TokenStream& input)
     {
         auto tryStmt = parseStmt(input);
 
-        ASTNode catchIdent = null;
-        ASTNode catchStmt = null;
+        ASTNode catchIdent = nullptr;
+        ASTNode catchStmt = nullptr;
         if (input.matchKw("catch"))
         {
-            input.readSep("(");
+            readSep(input, "(");
             catchIdent = parseExpr(input);
             if (catchIdent == nullptr)
-                throw new ParseError("invalid catch identifier", catchIdent.pos);
-            input.readSep(")");
+                throw new ParseError("invalid catch identifier", input.getPos());
+            readSep(input, ")");
             catchStmt = parseStmt(input);
         }
 
-        ASTNode finallyStmt = null;
+        ASTNode finallyStmt = nullptr;
         if (input.matchKw("finally"))
         {
             finallyStmt = parseStmt(input);
@@ -427,7 +424,7 @@ ASTNode parseStmt(TokenStream& input)
         if (!catchStmt && !finallyStmt)
             throw new ParseError("no catch or finally block", input.getPos());
 
-        return Builder.makeTry(
+        return Builder::makeTry(
             tryStmt, 
             catchIdent, 
             catchStmt,
@@ -438,11 +435,9 @@ ASTNode parseStmt(TokenStream& input)
     // Variable declaration/initialization statement
     else if (input.matchKw("var"))
     {
-        ASTNode[] identExprs = [];
-        ASTNode[] initExprs = [];
         bool firstIdent = true;
 
-        ASTNode vars = Builder.makeVars();
+        ASTNode vars = Builder::makeVars();
 
         // For each declaration
         for (;;)
@@ -455,25 +450,24 @@ ASTNode parseStmt(TokenStream& input)
             }
 
             auto name = input.read();
-            if (name.type != Token.IDENT)
+            if (name->type != Token::IDENT)
             {
                 throw new ParseError(
                     "expected identifier in variable declaration",
-                    name.pos
+                    name->pos
                 );
             }
-            ASTNode identExpr = new ASTNode(name.stringVal, name.pos);
 
             ASTNode initExpr = nullptr;
             auto op = input.peek();
 
-            if (op.type == Token.OP && op.stringVal == "=")
+            if (op->type == Token::OP && op->stringVal == "=")
             {
                 input.read(); 
                 initExpr = parseExpr(input, COMMA_PREC+1);
             }
 
-            Builder.appendVar(vars, name.stringVal.c_str(), initExpr);
+            Builder::appendVar(vars, name->stringVal.c_str(), initExpr);
             firstIdent = false;
         }
 
@@ -496,11 +490,11 @@ ASTNode parseStmt(TokenStream& input)
     else if (isLabel(input))
     {
         auto label = input.read();
-        assert(t.type == Token.IDENT);
-        input.readSep(":");
+        assert(label->type == Token::IDENT);
+        readSep(input, ":");
         auto stmt = parseStmt(input);
 
-        return Builder.makeLabel(label.stringVal.c_str(), stmt);
+        return Builder::makeLabel(label->stringVal.c_str(), stmt);
     }
 
     // Peek at the token at the start of the expression
@@ -513,11 +507,11 @@ ASTNode parseStmt(TokenStream& input)
     auto endTok = input.peek();
 
     // If the statement is empty
-    if (endTok == startTok)
+    if (*endTok == *startTok)
     {
         throw new ParseError(
             "empty statements must be terminated by semicolons",
-            endTok.pos
+            endTok->pos
         );
     }
 
@@ -555,7 +549,7 @@ ASTNode parseForStmt(TokenStream& input)
         if (input.peekSep(";"))
             return false;
 
-        if (Builder.isBinary(firstExpr, "in"))
+        if (Builder::isBinary(firstExpr, "in"))
             return true;
 
         return false;
@@ -566,14 +560,14 @@ ASTNode parseForStmt(TokenStream& input)
 
     // Read the for keyword and the opening parenthesis
     input.readKw("for");
-    input.readSep("(");
+    readSep(input, "(");
 
     // If this is a regular for-loop statement
     if (isForIn(input) == false)
     {
         // Parse the init statement
         auto initStmt = parseStmt(input);
-        if (!Builder.isVar(initStmt) && !Builder.isExpression(initStmt))
+        if (!Builder::isVar(initStmt) && !Builder::isExpression(initStmt))
             throw new ParseError("invalid for-loop init statement", initStmt.pos);
 
         // Parse the test expression
@@ -586,7 +580,7 @@ ASTNode parseForStmt(TokenStream& input)
         else
         {
             testExpr = parseExpr(input);
-            input.readSep(";");
+            readSep(input, ";");
         }
 
         // Parse the inccrement expression
@@ -599,13 +593,13 @@ ASTNode parseForStmt(TokenStream& input)
         else
         {
             incrExpr = parseExpr(input);
-            input.readSep(")");
+            readSep(input, ")");
         }
 
         // Parse the loop body
         auto bodyStmt = parseStmt(input);
 
-        return Builder.makeFor(initStmt, testExpr, incrExpr, bodyStmt, pos);
+        return Builder::makeFor(initStmt, testExpr, incrExpr, bodyStmt, pos);
     }
 
     // This is a for-in statement
@@ -613,22 +607,22 @@ ASTNode parseForStmt(TokenStream& input)
     {
         auto hasDecl = input.matchKw("var");
         auto varExpr = parseExpr(input, IN_PREC+1);
-        if (hasDecl && !Builder.isName(varExpr)) // XXX
+        if (hasDecl && !Builder::isName(varExpr)) // XXX
             throw new ParseError("invalid variable expression in for-in loop", pos);
 
         auto inTok = input.peek();
-        if (inTok.type != Token.OP || inTok.stringVal != "in")
+        if (inTok.type != Token::OP || inTok.stringVal != "in")
             throw new ParseError("expected \"in\" keyword", input.getPos());
         input.read();
 
         auto inExpr = parseExpr(input);
 
-        input.readSep(")");
+        readSep(input, ")");
 
         // Parse the loop body
         auto bodyStmt = parseStmt(input);
 
-        return Builder.makeForIn(hasDecl, varExpr, inExpr, bodyStmt, pos);
+        return Builder::makeForIn(hasDecl, varExpr, inExpr, bodyStmt, pos);
     }
 }
 
@@ -661,7 +655,7 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
         Token cur = input.peek();
 
         // If the token is not an operator or separator, break out
-        if (cur.type != Token.OP && cur.type != Token.SEP)
+        if (cur.type != Token::OP && cur.type != Token::SEP)
             break;
 
         //writefln("op str: %s", cur.stringVal);
@@ -689,15 +683,15 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
         {
             // Parse the argument list and create the call expression
             auto argExprs = parseExprList(input, "(", ")");
-            lhsExpr = Builder.makeCall(lhsExpr, argExprs, lhsExpr.pos);
+            lhsExpr = Builder::makeCall(lhsExpr, argExprs, lhsExpr.pos);
         }
 
         // If this is an array indexing expression
         else if (input.matchSep("["))
         {
             auto indexExpr = parseExpr(input);
-            input.readSep("]");
-            lhsExpr = Builder.makeSub(lhsExpr, indexExpr, lhsExpr.pos);
+            readSep(input, "]");
+            lhsExpr = Builder::makeSub(lhsExpr, indexExpr, lhsExpr.pos);
         }
 
         // If this is a member expression
@@ -707,9 +701,9 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
 
             // Parse the identifier string
             auto tok = input.read();
-            if (!(tok.type == Token.IDENT) &&
-                !(tok.type == Token.KEYWORD) &&
-                !(tok.type == Token.OP && ident(tok.stringVal)))
+            if (!(tok.type == Token::IDENT) &&
+                !(tok.type == Token::KEYWORD) &&
+                !(tok.type == Token::OP && ident(tok.stringVal)))
             {
                 throw new ParseError(
                     "invalid member identifier \"" ~ tok.toString() ~ "\"", 
@@ -718,7 +712,7 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
             }
 
             // Produce an indexing expression
-            lhsExpr = Builder.makeIndex(lhsExpr, tok.stringVal, lhsExpr.pos);
+            lhsExpr = Builder::makeIndex(lhsExpr, tok.stringVal, lhsExpr.pos);
         }
 
         // If this is the ternary conditional operator
@@ -728,10 +722,10 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
             input.read();
 
             auto trueExpr = parseExpr(input);
-            input.readSep(":");
+            readSep(input, ":");
             auto falseExpr = parseExpr(input, op.prec-1);
 
-            lhsExpr = Builder.makeConditional(lhsExpr, trueExpr, falseExpr, lhsExpr.pos);
+            lhsExpr = Builder::makeConditional(lhsExpr, trueExpr, falseExpr, lhsExpr.pos);
         }
 
         // If this is a binary operator
@@ -749,12 +743,12 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
             {
                 auto rhsOp = findOperator(op.str.substr([0, op.str.length-1), 2);
                 assert (rhsOp != nullptr);
-                rhsExpr = Builder.makeBinary(rhsOp, lhsExpr, rhsExpr, rhsExpr.pos);
+                rhsExpr = Builder::makeBinary(rhsOp, lhsExpr, rhsExpr, rhsExpr.pos);
                 op = eqOp;
             }
 
             // Update lhs with the new value
-            lhsExpr = Builder.makeBinary(op, lhsExpr, rhsExpr, lhsExpr.pos);
+            lhsExpr = Builder::makeBinary(op, lhsExpr, rhsExpr, lhsExpr.pos);
         }
 
         // If this is a unary operator
@@ -764,7 +758,7 @@ ASTNode parseExpr(TokenStream& input, int minPrec = 0)
             input.read();
 
             // Update lhs with the new value
-            lhsExpr = Builder.makeUnary(op, lhsExpr, lhsExpr.pos);
+            lhsExpr = Builder::makeUnary(op, lhsExpr, lhsExpr.pos);
         }
 
         else
@@ -795,15 +789,15 @@ ASTNode parseAtom(TokenStream& input)
     else if (input.matchSep("("))
     {
         ASTNode expr = parseExpr(input);
-        input.readSep(")");
+        readSep(input, ")");
         return expr;
     }
 
     // Array literal
-    else if (t.type == Token.SEP && t.stringVal == "[")
+    else if (t.type == Token::SEP && t.stringVal == "[")
     {
         auto exprs = parseExprList(input, "[", "]");
-        return Builder.makeArray(exprs, pos);
+        return Builder::makeArray(exprs, pos);
     }
 
     // Object literal
@@ -824,20 +818,20 @@ ASTNode parseAtom(TokenStream& input)
             // Read a property name
             auto tok = input.read();
             StringExpr stringExpr = null;
-            if (tok.type is Token.IDENT ||
-                tok.type is Token.KEYWORD ||
-                tok.type is Token.STRING)
+            if (tok.type is Token::IDENT ||
+                tok.type is Token::KEYWORD ||
+                tok.type is Token::STRING)
                 stringExpr = new StringExpr(tok.stringVal, tok.pos);
-            if (tok.type is Token.OP && ident(tok.stringVal))
+            if (tok.type is Token::OP && ident(tok.stringVal))
                 stringExpr = new StringExpr(tok.stringVal, tok.pos);
-            else if (tok.type is Token.INT)
+            else if (tok.type is Token::INT)
                 stringExpr = new StringExpr(to!std::string(tok.intVal), tok.pos);
 
             if (!stringExpr)
                 throw new ParseError("expected property name in object literal", tok.pos);
             names ~= [stringExpr];
 
-            input.readSep(":");
+            readSep(input, ":");
 
             // Parse an expression with priority above the comma operator
             auto valueExpr = parseExpr(input, COMMA_PREC+1);
@@ -860,7 +854,7 @@ ASTNode parseAtom(TokenStream& input)
     }
 
     // Regular expression literal
-    else if (t.type == Token.REGEXP)
+    else if (t.type == Token::REGEXP)
     {
         assert(0);
         /*
@@ -870,7 +864,7 @@ ASTNode parseAtom(TokenStream& input)
     }
 
     // New expression
-    else if (t.type == Token.OP && t.stringVal == "new")
+    else if (t.type == Token::OP && t.stringVal == "new")
     {
         // Consume the "new" token
         input.read();
@@ -883,7 +877,7 @@ ASTNode parseAtom(TokenStream& input)
         auto argExprs = input.peekSep("(") ? parseExprList(input, "(", ")") : nullptr;
 
         // Create the new expression
-        return Builder.makeNew(baseExpr, argExprs, t.pos);
+        return Builder::makeNew(baseExpr, argExprs, t.pos);
     }
 
     // Function expression
@@ -891,65 +885,65 @@ ASTNode parseAtom(TokenStream& input)
     else if (input.matchKw("function"))
     {
         auto nextTok = input.peek();
-        auto nameExpr = (nextTok.type != Token.SEP) ? parseAtom(input) : nullptr;
-        if (nameExpr && !Builder.isName(nameExpr))
+        auto nameExpr = (nextTok.type != Token::SEP) ? parseAtom(input) : nullptr;
+        if (nameExpr && !Builder::isName(nameExpr))
             throw new ParseError("invalid function name", nameExpr.pos);
 
         auto params = parseParamList(input);
 
         auto bodyStmt = parseStmt(input);
 
-        return Builder.makeFun(nameExpr, params, bodyStmt, pos);
+        return Builder::makeFun(nameExpr, params, bodyStmt, pos);
     }
 
     // Identifier/symbol literal
-    else if (t.type == Token.IDENT)
+    else if (t.type == Token::IDENT)
     {
         input.read();
-        return Builder.makeName(t.stringVal, pos);
+        return Builder::makeName(t.stringVal, pos);
     }
 
     // Integer literal
-    else if (t.type == Token.INT)
+    else if (t.type == Token::INT)
     {
         input.read();
-        return Builder.makeNum(t.intVal, pos);
+        return Builder::makeNum(t.intVal, pos);
     }
 
     // Floating-point literal
-    else if (t.type == Token.FLOAT)
+    else if (t.type == Token::FLOAT)
     {
         input.read();
-        return Builder.makeNum(t.floatVal, pos);
+        return Builder::makeNum(t.floatVal, pos);
     }
 
     // String literal
-    else if (t.type == Token.STRING)
+    else if (t.type == Token::STRING)
     {
         input.read();
-        return Builder.makeString(t.stringVal, pos);
+        return Builder::makeString(t.stringVal, pos);
     }
 
     // True boolean constant
     else if (input.matchKw("true"))
     {
-        return Builder.makeBool(true, pos);
+        return Builder::makeBool(true, pos);
     }
 
     // False boolean constant
     else if (input.matchKw("false"))
     {
-        return Builder.makeBool(false, pos);
+        return Builder::makeBool(false, pos);
     }
 
     // Null constant
     else if (input.matchKw("null"))
     {
-        return Builder.makeNull(pos);
+        return Builder::makeNull(pos);
     }
 
     // Unary expressions
-    else if (t.type == Token.OP)
+    else if (t.type == Token::OP)
     {
         auto op = findOperator(t.stringVal, 1, 'r');
         if (!op)
@@ -967,7 +961,7 @@ ASTNode parseAtom(TokenStream& input)
         ASTNode expr = parseExpr(input, op.prec);
 
         // Return the unary expression
-        return Builder.makeUnary(op, expr, pos);
+        return Builder::makeUnary(op, expr, pos);
     }
 
     throw new ParseError("unexpected token: " ~ t.toString(), pos);
@@ -978,9 +972,9 @@ Parse a list of expressions
 */
 ASTNode parseExprList(TokenStream& input, std::string openSep, std::string closeSep)
 {
-    input.readSep(openSep);
+    readSep(input, openSep);
 
-    ASTNode exprs = Builder.makeList();
+    ASTNode exprs = Builder::makeList();
 
     for (;;)
     {
@@ -989,7 +983,7 @@ ASTNode parseExprList(TokenStream& input, std::string openSep, std::string close
 
         // If this is not the first element and there
         // is no comma separator, throw an error
-        if (Builder.getSize(exprs) > 0 && input.matchSep(",") == false)
+        if (Builder::getSize(exprs) > 0 && input.matchSep(",") == false)
             throw new ParseError("expected comma", input.getPos());
 
         // Handle missing array element syntax
@@ -1000,13 +994,13 @@ ASTNode parseExprList(TokenStream& input, std::string openSep, std::string close
 
             if (input.peekSep(",")) 
             {
-                Builder.append(exprs, Builder.makeUndefined());
+                Builder::append(exprs, Builder::makeUndefined());
                 continue;
             }
         }
 
         // Parse the current element
-        Builder.append(exprs, parseExpr(input, COMMA_PREC+1));
+        Builder::append(exprs, parseExpr(input, COMMA_PREC+1));
     }
 
     return exprs;
@@ -1017,20 +1011,20 @@ Parse a function declaration's parameter list
 */
 ASTNode parseParamList(TokenStream& input)
 {
-    input.readSep("(");
+    readSep(input, "(");
 
-    ASTNode exprs = Builder.makeList();
+    ASTNode exprs = Builder::makeList();
 
     for (;;)
     {
         if (input.matchSep(")"))
             break;
 
-        if (Builder.getSize(exprs) > 0 && input.matchSep(",") == false)
+        if (Builder::getSize(exprs) > 0 && input.matchSep(",") == false)
             throw new ParseError("expected comma", input.getPos());
 
         auto expr = parseAtom(input);
-        if (!Builder.isName(expr)) {
+        if (!Builder::isName(expr)) {
             throw new ParseError("invalid parameter", expr.pos);
 
         Buider.append(exprs, expr);
@@ -1041,5 +1035,5 @@ ASTNode parseParamList(TokenStream& input)
 
 }; // struct Parser
 
-} // namespace Almond
+} // namespace almond
 
