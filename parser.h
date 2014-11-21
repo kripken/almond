@@ -504,7 +504,7 @@ ASTNode* parseStmt(TokenStream& input)
     auto endTok = input.peek();
 
     // If the statement is empty
-    if (*endTok == *startTok)
+    if (endTok == startTok)
     {
         throw new ParseError(
             "empty statements must be terminated by semicolons",
