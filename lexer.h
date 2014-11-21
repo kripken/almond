@@ -335,14 +335,16 @@ struct StrStream
     /// Test for a match with a given string, the string is consumed if matched
     bool match(const char *str_)
     {
-        if (index + strLen > strLen)
+        int str_Len = strlen(str_);
+
+        if (index + str_Len > strLen)
             return false;
 
-        if (strncmp(str_, str+index, strlen(str_)))
+        if (strncmp(str_, str+index, str_Len))
             return false;
 
         // Consume the characters
-        for (int i = 0; i < strLen; ++i)
+        for (int i = 0; i < str_Len; ++i)
             readCh();
 
         return true;
@@ -597,7 +599,7 @@ Token* getToken(StrStream& stream, LexFlags flags)
     for (;;)
     {
         ch = stream.peekCh();
-printf("peek char %d (%c)\n", ch, ch);
+//printf("peek char %d (%c)\n", ch, ch);
 
         // Whitespace characters
         if (whitespace(ch))
@@ -642,7 +644,7 @@ printf("peek char %d (%c)\n", ch, ch);
 
     // Get the position at the start of the token
     SrcPos* pos = stream.getPos();
-printf("curr char %d (%c)\n", ch, ch);
+//printf("curr char %d (%c)\n", ch, ch);
 
     // Number (starting with a digit or .nxx)
     if (digit(ch) || (ch == '.' && digit(stream.peekCh(1))))
