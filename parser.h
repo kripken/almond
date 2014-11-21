@@ -35,37 +35,26 @@
 *
 *****************************************************************************/
 
-module parser.parser;
-
-import std.stdio;
-import std.file;
-import std.utf;
-import std.array;
-import std.conv;
-import std.regex;
-import parser.lexer;
-import parser.ast;
-import parser.vars;
+typedef void* ASTNode;
 
 /**
 Parsing error exception
 */
-class ParseError : Error
+struct ParseError
 {
+    std::string msg;
+
     /// Source position
-    SrcPos pos;
+    SrcPos* pos;
 
-    this(string msg, SrcPos pos)
+    ParseError(string msg, SrcPos pos_) : msg(msg_), pos(pos_)
     {
-        assert (pos !is null, "source position is null");
-
-        super(msg);
-        this.pos = pos;
+        assert (pos); // "source position is null");
     }
 
-    override string toString()
+    std::string toString()
     {
-        return pos.toString() ~ ": " ~ this.msg;
+        return "ParseError: " + msg;
     }
 }
 
@@ -73,12 +62,12 @@ class ParseError : Error
 Read and consume a separator token. A parse error
 is thrown if the separator is missing.
 */
-void readSep(TokenStream input, wstring sep)
+void readSep(TokenStream& input, std::string sep)
 {
-    if (input.matchSep(sep) == false)
+    if (!input.matchSep(sep))
     {
         throw new ParseError(
-            "expected \"" ~ to!string(sep) ~ "\" separator",
+            "expected \"" + sep + "\" separator",
             input.getPos()
         );
     }
@@ -88,12 +77,12 @@ void readSep(TokenStream input, wstring sep)
 Read and consume a keyword token. A parse error
 is thrown if the keyword is missing.
 */
-void readKw(TokenStream input, wstring keyword)
+void readKw(TokenStream& input, std::string keyword)
 {
     if (input.matchKw(keyword) == false)
     {
         throw new ParseError(
-            "expected \"" ~ to!string(keyword) ~ "\" keyword",
+            "expected \"" + keyword + "\" keyword",
             input.getPos()
         );
     }
@@ -103,22 +92,22 @@ void readKw(TokenStream input, wstring keyword)
 Test if a semicolon is present or one could be automatically inserted
 at the current position
 */
-bool peekSemiAuto(TokenStream input)
+bool peekSemiAuto(TokenStream& input)
 {
     return (
-        input.peekSep(";") == true ||
-        input.peekSep("}") == true ||
-        input.newline() == true ||
-        input.eof() == true
+        input.peekSep(";") ||
+        input.peekSep("}") ||
+        input.newline() ||
+        input.eof()
     );
 }
 
 /**
 Read and consume a semicolon or an automatically inserted semicolon
 */
-void readSemiAuto(TokenStream input)
+void readSemiAuto(TokenStream& input)
 {
-    if (input.matchSep(";") == false && peekSemiAuto(input) == false)
+    if (!input.matchSep(";") && !peekSemiAuto(input))
     {
         throw new ParseError(
             "expected semicolon or end of statement",
@@ -130,14 +119,17 @@ void readSemiAuto(TokenStream input)
 /**
 Read an identifier token from the input
 */
-IdentExpr readIdent(TokenStream input)
+ASTNode readIdent(TokenStream& input)
 {
     auto t = input.read();
 
     if (t.type != Token.IDENT)
         throw new ParseError("expected identifier", t.pos);
 
-    return new IdentExpr(t.stringVal, t.pos);
+    // MAKE IDENT
+    printf("make ident %s", t->stringVal.c_str());
+    //delete t;
+    return nullptr;
 }
 
 /**
@@ -148,7 +140,7 @@ ASTProgram parseFile(string fileName, bool isRuntime = false)
     string src = readText!(string)(fileName);
 
     // Convert the string to UTF-16
-    wstring wSrc = toUTF16(src);
+    std::string wSrc = toUTF16(src);
 
     auto strStream = StrStream(wSrc, fileName);
 
@@ -188,7 +180,7 @@ Parse a source string
 ASTProgram parseString(string src, string fileName = "", bool isRuntime = false)
 {
     // Convert the string to UTF-16
-    wstring wSrc = toUTF16(src);
+    std::string wSrc = toUTF16(src);
 
     auto input = new TokenStream(StrStream(wSrc, fileName));
 
@@ -198,7 +190,7 @@ ASTProgram parseString(string src, string fileName = "", bool isRuntime = false)
 /**
 Parse a top-level program node
 */
-ASTProgram parseProgram(TokenStream input, bool isRuntime)
+ASTProgram parseProgram(TokenStream& input, bool isRuntime)
 {
     SrcPos pos = input.getPos();
 
@@ -248,12 +240,12 @@ ASTProgram parseProgram(TokenStream input, bool isRuntime)
 /**
 Parse a statement
 */
-ASTStmt parseStmt(TokenStream input)
+ASTStmt parseStmt(TokenStream& input)
 {
     //writeln("parseStmt");
 
     /// Test if this is a label statement and backtrack
-    bool isLabel(TokenStream input)
+    bool isLabel(TokenStream& input)
     {
         // Copy the starting input to allow backtracking
         auto startInput = new TokenStream(input);
@@ -581,10 +573,10 @@ ASTStmt parseStmt(TokenStream input)
 /**
 Parse a for or for-in loop statement
 */
-ASTStmt parseForStmt(TokenStream input)
+ASTStmt parseForStmt(TokenStream& input)
 {
     /// Test if this is a for-in statement and backtrack
-    bool isForIn(TokenStream input)
+    bool isForIn(TokenStream& input)
     {
         // Copy the starting input to allow backtracking
         auto startInput = new TokenStream(input);
@@ -686,7 +678,7 @@ ASTStmt parseForStmt(TokenStream input)
 /**
 Parse an expression
 */
-ASTExpr parseExpr(TokenStream input, int minPrec = 0)
+ASTExpr parseExpr(TokenStream& input, int minPrec = 0)
 {
     // Expression parsing using the precedence climbing algorithm
     //    
@@ -815,11 +807,11 @@ ASTExpr parseExpr(TokenStream input, int minPrec = 0)
             {
                 if (op.str == "=" && funExpr.name is null)
                 {
-                    wstring nameStr;
+                    std::string nameStr;
 
                     for (auto curExpr = lhsExpr; curExpr !is null;)
                     {
-                        wstring subStr;
+                        std::string subStr;
 
                         if (auto idxExpr = cast(IndexExpr)curExpr)
                         {
@@ -875,7 +867,7 @@ ASTExpr parseExpr(TokenStream input, int minPrec = 0)
 /**
 Parse an atomic expression
 */
-ASTExpr parseAtom(TokenStream input)
+ASTExpr parseAtom(TokenStream& input)
 {
     //writeln("parseAtom");
 
@@ -926,7 +918,7 @@ ASTExpr parseAtom(TokenStream input)
             if (tok.type is Token.OP && ident(tok.stringVal))
                 stringExpr = new StringExpr(tok.stringVal, tok.pos);
             else if (tok.type is Token.INT)
-                stringExpr = new StringExpr(to!wstring(tok.intVal), tok.pos);
+                stringExpr = new StringExpr(to!std::string(tok.intVal), tok.pos);
 
             if (!stringExpr)
                 throw new ParseError("expected property name in object literal", tok.pos);
@@ -1084,7 +1076,7 @@ ASTExpr parseAtom(TokenStream input)
 /**
 Parse a list of expressions
 */
-ASTExpr[] parseExprList(TokenStream input, wstring openSep, wstring closeSep)
+ASTExpr[] parseExprList(TokenStream& input, std::string openSep, std::string closeSep)
 {
     input.readSep(openSep);
 
@@ -1123,7 +1115,7 @@ ASTExpr[] parseExprList(TokenStream input, wstring openSep, wstring closeSep)
 /**
 Parse a function declaration's parameter list
 */
-IdentExpr[] parseParamList(TokenStream input)
+IdentExpr[] parseParamList(TokenStream& input)
 {
     input.readSep("(");
 
