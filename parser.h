@@ -200,44 +200,51 @@ ASTNode parseProgram(TokenStream& input, bool isRuntime)
     return program;
 }
 
+class ScopeExit {
+  std::function<void ()> func;
+public:
+  ScopeExit(std::function<void ()> func_) : func(func_) {}
+  ~ScopeExit() { func(); }
+};
+
 /**
 Parse a statement
 */
 ASTNode parseStmt(TokenStream& input)
 {
-    //writeln("parseStmt");
-
     /// Test if this is a label statement and backtrack
-    bool isLabel(TokenStream& input)
+    auto isLabel = [](TokenStream& input)
     {
         // Copy the starting input to allow backtracking
-        auto startInput = new TokenStream(input);
+        TokenStream startInput(input);
 
         // On return, backtrack to the start
-        scope(exit)
+        ScopeExit([&]() {
             input.backtrack(startInput);
+        });
 
         auto t = input.peek();
-        if (t.type != Token.IDENT)
+        if (t->type != Token.IDENT)
             return false;
         input.read();
 
         return input.matchSep(":");
-    }
+    };
 
     // Get the current source position
-    SrcPos pos = input.getPos();
+    SrcPos* pos = input.getPos();
 
     // Empty statement
     if (input.matchSep(";"))
     {
-        return new ExprStmt(new TrueExpr(pos), pos);
+        printf("make empty expression statement\n"); // MAKE
+        return nullptr;
     }
 
     // Block statement
     else if (input.matchSep("{"))
     {
-        ASTNode[] stmts;
+        ASTNode stmts = nullptr; // MAKE block
 
         for (;;)
         {
@@ -252,17 +259,18 @@ ASTNode parseStmt(TokenStream& input)
                 );
             }
 
-            stmts ~= [parseStmt(input)]; 
+            parseStmt(input); // MAKE APPEND THIS
+            printf("append\n");
         }
 
-        return new BlockStmt(stmts, pos);
+        return nullptr;
     }
 
     // If statement
     else if (input.matchKw("if"))
     {
         input.readSep("(");
-        ASTExpr testExpr = parseExpr(input);
+        ASTNode testExpr = parseExpr(input);
         input.readSep(")");
 
         auto trueStmt = parseStmt(input);
@@ -271,9 +279,10 @@ ASTNode parseStmt(TokenStream& input)
         if (input.matchKw("else"))
             falseStmt = parseStmt(input);
         else
-            falseStmt = new ExprStmt(new TrueExpr());
+            falseStmt = nullptr;
 
-        return new IfStmt(testExpr, trueStmt, falseStmt, pos);
+        printf("make if\n"); // MAKE IF return new IfStmt(testExpr, trueStmt, falseStmt, pos);
+        return nullptr;
     }
 
     // While loop
@@ -284,7 +293,8 @@ ASTNode parseStmt(TokenStream& input)
         input.readSep(")");
         auto bodyStmt = parseStmt(input);
 
-        return new WhileStmt(testExpr, bodyStmt, pos);
+        printf("make while\n"); new WhileStmt(testExpr, bodyStmt, pos);
+        return nullptr;
     }
 
     // Do-while loop
@@ -297,7 +307,8 @@ ASTNode parseStmt(TokenStream& input)
         auto testExpr = parseExpr(input);
         input.readSep(")");
 
-        return new DoWhileStmt(bodyStmt, testExpr, pos);
+        printf("do-while\n"); // DoWhileStmt(bodyStmt, testExpr, pos);
+        return nullptr;
     }
 
     // For or for-in loop
@@ -314,7 +325,7 @@ ASTNode parseStmt(TokenStream& input)
         input.readSep(")");
         input.readSep("{");
 
-        ASTExpr[] caseExprs = [];
+        ASTNode[] caseExprs = [];
         ASTNode[][] caseStmts = [];
 
         bool defaultSeen = false;
@@ -389,7 +400,7 @@ ASTNode parseStmt(TokenStream& input)
         if (input.matchSep(";") || input.peekSemiAuto())
             return new ReturnStmt(null, pos);
 
-        ASTExpr expr = parseExpr(input);
+        ASTNode expr = parseExpr(input);
         readSemiAuto(input);
         return new ReturnStmt(expr, pos);
     }
@@ -397,7 +408,7 @@ ASTNode parseStmt(TokenStream& input)
     // Throw statement
     else if (input.matchKw("throw"))
     {
-        ASTExpr expr = parseExpr(input);
+        ASTNode expr = parseExpr(input);
         readSemiAuto(input);
         return new ThrowStmt(expr, pos);
     }
@@ -440,7 +451,7 @@ ASTNode parseStmt(TokenStream& input)
     else if (input.matchKw("var"))
     {
         IdentExpr[] identExprs = [];
-        ASTExpr[] initExprs = [];
+        ASTNode[] initExprs = [];
 
         // For each declaration
         for (;;)
@@ -462,7 +473,7 @@ ASTNode parseStmt(TokenStream& input)
             }
             IdentExpr identExpr = new IdentExpr(name.stringVal, name.pos);
 
-            ASTExpr initExpr = null;
+            ASTNode initExpr = null;
             auto op = input.peek();
 
             if (op.type == Token.OP && op.stringVal == "=")
@@ -513,7 +524,7 @@ ASTNode parseStmt(TokenStream& input)
     auto startTok = input.peek();
 
     // Parse as an expression statement
-    ASTExpr expr = parseExpr(input);
+    ASTNode expr = parseExpr(input);
 
     // Peek at the token after the expression
     auto endTok = input.peek();
@@ -584,7 +595,7 @@ ASTNode parseForStmt(TokenStream& input)
 
         // Parse the test expression
         pos = input.getPos();
-        ASTExpr testExpr;
+        ASTNode testExpr;
         if (input.matchSep(";"))
         {
             testExpr = new TrueExpr(pos);
@@ -597,7 +608,7 @@ ASTNode parseForStmt(TokenStream& input)
 
         // Parse the inccrement expression
         pos = input.getPos();
-        ASTExpr incrExpr;
+        ASTNode incrExpr;
         if (input.matchSep(")"))
         {
             incrExpr = new TrueExpr(pos);
@@ -641,7 +652,7 @@ ASTNode parseForStmt(TokenStream& input)
 /**
 Parse an expression
 */
-ASTExpr parseExpr(TokenStream& input, int minPrec = 0)
+ASTNode parseExpr(TokenStream& input, int minPrec = 0)
 {
     // Expression parsing using the precedence climbing algorithm
     //    
@@ -661,7 +672,7 @@ ASTExpr parseExpr(TokenStream& input, int minPrec = 0)
     //writeln("parseExpr");
 
     // Parse the first atom
-    ASTExpr lhsExpr = parseAtom(input);
+    ASTNode lhsExpr = parseAtom(input);
 
     for (;;)
     {
@@ -752,7 +763,7 @@ ASTExpr parseExpr(TokenStream& input, int minPrec = 0)
             input.read();
 
             // Recursively parse the rhs
-            ASTExpr rhsExpr = parseExpr(input, nextMinPrec);
+            ASTNode rhsExpr = parseExpr(input, nextMinPrec);
 
             // Convert expressions of the form "x <op>= y" to "x = x <op> y"
             auto eqOp = findOperator("=", 2, 'r');
@@ -830,7 +841,7 @@ ASTExpr parseExpr(TokenStream& input, int minPrec = 0)
 /**
 Parse an atomic expression
 */
-ASTExpr parseAtom(TokenStream& input)
+ASTNode parseAtom(TokenStream& input)
 {
     //writeln("parseAtom");
 
@@ -846,7 +857,7 @@ ASTExpr parseAtom(TokenStream& input)
     // Parenthesized expression
     else if (input.matchSep("("))
     {
-        ASTExpr expr = parseExpr(input);
+        ASTNode expr = parseExpr(input);
         input.readSep(")");
         return expr;
     }
@@ -862,7 +873,7 @@ ASTExpr parseAtom(TokenStream& input)
     else if (input.matchSep("{"))
     {
         StringExpr[] names = [];
-        ASTExpr[] values = [];
+        ASTNode[] values = [];
 
         // For each property
         for (;;)
@@ -1013,7 +1024,7 @@ ASTExpr parseAtom(TokenStream& input)
         input.read();
 
         // Parse the right subexpression
-        ASTExpr expr = parseExpr(input, op.prec);
+        ASTNode expr = parseExpr(input, op.prec);
 
         // If this is a negated integer
         if (op.str == "-"w)
@@ -1039,11 +1050,11 @@ ASTExpr parseAtom(TokenStream& input)
 /**
 Parse a list of expressions
 */
-ASTExpr[] parseExprList(TokenStream& input, std::string openSep, std::string closeSep)
+ASTNode[] parseExprList(TokenStream& input, std::string openSep, std::string closeSep)
 {
     input.readSep(openSep);
 
-    ASTExpr[] exprs;
+    ASTNode[] exprs;
 
     for (;;)
     {
