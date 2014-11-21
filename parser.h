@@ -976,11 +976,11 @@ ASTNode parseAtom(TokenStream& input)
 /**
 Parse a list of expressions
 */
-ASTNode[] parseExprList(TokenStream& input, std::string openSep, std::string closeSep)
+ASTNode parseExprList(TokenStream& input, std::string openSep, std::string closeSep)
 {
     input.readSep(openSep);
 
-    ASTNode[] exprs;
+    ASTNode exprs = Builder.makeList();
 
     for (;;)
     {
@@ -989,7 +989,7 @@ ASTNode[] parseExprList(TokenStream& input, std::string openSep, std::string clo
 
         // If this is not the first element and there
         // is no comma separator, throw an error
-        if (exprs.length > 0 && input.matchSep(",") == false)
+        if (Builder.getSize(exprs) > 0 && input.matchSep(",") == false)
             throw new ParseError("expected comma", input.getPos());
 
         // Handle missing array element syntax
@@ -1000,13 +1000,13 @@ ASTNode[] parseExprList(TokenStream& input, std::string openSep, std::string clo
 
             if (input.peekSep(",")) 
             {
-                exprs ~= new ASTNode("undefined", input.getPos());
+                Builder.append(exprs, Builder.makeUndefined());
                 continue;
             }
         }
 
         // Parse the current element
-        exprs ~= parseExpr(input, COMMA_PREC+1);
+        Builder.append(exprs, parseExpr(input, COMMA_PREC+1));
     }
 
     return exprs;
@@ -1015,26 +1015,25 @@ ASTNode[] parseExprList(TokenStream& input, std::string openSep, std::string clo
 /**
 Parse a function declaration's parameter list
 */
-ASTNode[] parseParamList(TokenStream& input)
+ASTNode parseParamList(TokenStream& input)
 {
     input.readSep("(");
 
-    ASTNode[] exprs;
+    ASTNode exprs = Builder.makeList();
 
     for (;;)
     {
         if (input.matchSep(")"))
             break;
 
-        if (exprs.length > 0 && input.matchSep(",") == false)
+        if (Builder.getSize(exprs) > 0 && input.matchSep(",") == false)
             throw new ParseError("expected comma", input.getPos());
 
         auto expr = parseAtom(input);
-        auto ident = cast(ASTNode)expr;
-        if (ident is null)
+        if (!Builder.isName(expr)) {
             throw new ParseError("invalid parameter", expr.pos);
 
-        exprs ~= ident;
+        Buider.append(exprs, expr);
     }
 
     return exprs;
