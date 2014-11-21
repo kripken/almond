@@ -597,6 +597,7 @@ Token* getToken(StrStream& stream, LexFlags flags)
     for (;;)
     {
         ch = stream.peekCh();
+printf("peek char %d (%c)\n", ch, ch);
 
         // Whitespace characters
         if (whitespace(ch))
@@ -641,6 +642,7 @@ Token* getToken(StrStream& stream, LexFlags flags)
 
     // Get the position at the start of the token
     SrcPos* pos = stream.getPos();
+printf("curr char %d (%c)\n", ch, ch);
 
     // Number (starting with a digit or .nxx)
     if (digit(ch) || (ch == '.' && digit(stream.peekCh(1))))
