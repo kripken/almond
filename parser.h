@@ -1019,7 +1019,7 @@ ASTNode* parseParamList(TokenStream& input)
 
         auto expr = parseAtom(input);
         if (!Builder::isName(expr))
-            throw new ParseError("invalid parameter", expr.pos);
+            throw new ParseError("invalid parameter", input.getPos());
 
         Builder::append(exprs, expr);
     }
