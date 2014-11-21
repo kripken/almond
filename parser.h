@@ -533,14 +533,15 @@ Parse a for or for-in loop statement
 ASTNode parseForStmt(TokenStream& input)
 {
     /// Test if this is a for-in statement and backtrack
-    bool isForIn(TokenStream& input)
+    auto isForIn = [](TokenStream& input)
     {
         // Copy the starting input to allow backtracking
-        auto startInput = new TokenStream(input);
+        TokenStream startInput(input);
 
         // On return, backtrack to the start
-        scope(exit)
+        ScopeExit([&]() {
             input.backtrack(startInput);
+        });
 
         // Test if there is a variable declaration
         auto hasDecl = input.matchKw("var");
@@ -549,17 +550,16 @@ ASTNode parseForStmt(TokenStream& input)
             return false;
 
         // Parse the first expression, stop at comma if there is a declaration
-        auto firstExpr = parseExpr(input, hasDecl? (COMMA_PREC+1):COMMA_PREC);
+        auto firstExpr = parseExpr(input, hasDecl ? (COMMA_PREC+1) : COMMA_PREC);
 
         if (input.peekSep(";"))
             return false;
 
-        if (auto binExpr = cast(BinOpExpr)firstExpr)
-            if (binExpr.op.str == "in")
-                return true;
+        if (Builder.isBinary(firstExpr, "in"))
+            return true;
 
         return false;
-    }
+    };
 
     // Get the current position
     auto pos = input.getPos();
@@ -573,7 +573,7 @@ ASTNode parseForStmt(TokenStream& input)
     {
         // Parse the init statement
         auto initStmt = parseStmt(input);
-        if (cast(VarStmt)initStmt is null && cast(ExprStmt)initStmt is null)
+        if (!Builder.isVar(initStmt) && !Builder.isExpression(initStmt))
             throw new ParseError("invalid for-loop init statement", initStmt.pos);
 
         // Parse the test expression
@@ -581,7 +581,7 @@ ASTNode parseForStmt(TokenStream& input)
         ASTNode testExpr;
         if (input.matchSep(";"))
         {
-            testExpr = new TrueExpr(pos);
+            testExpr = nullptr;
         }
         else
         {
@@ -594,7 +594,7 @@ ASTNode parseForStmt(TokenStream& input)
         ASTNode incrExpr;
         if (input.matchSep(")"))
         {
-            incrExpr = new TrueExpr(pos);
+            incrExpr = nullptr;
         }
         else
         {
@@ -605,7 +605,7 @@ ASTNode parseForStmt(TokenStream& input)
         // Parse the loop body
         auto bodyStmt = parseStmt(input);
 
-        return new ForStmt(initStmt, testExpr, incrExpr, bodyStmt, pos);
+        return Builder.makeFor(initStmt, testExpr, incrExpr, bodyStmt, pos);
     }
 
     // This is a for-in statement
@@ -613,7 +613,7 @@ ASTNode parseForStmt(TokenStream& input)
     {
         auto hasDecl = input.matchKw("var");
         auto varExpr = parseExpr(input, IN_PREC+1);
-        if (hasDecl && cast(ASTNode)varExpr is null)
+        if (hasDecl && !Builder.isName(varExpr)) // XXX
             throw new ParseError("invalid variable expression in for-in loop", pos);
 
         auto inTok = input.peek();
@@ -628,7 +628,7 @@ ASTNode parseForStmt(TokenStream& input)
         // Parse the loop body
         auto bodyStmt = parseStmt(input);
 
-        return new ForInStmt(hasDecl, varExpr, inExpr, bodyStmt, pos);
+        return Builder.makeForIn(hasDecl, varExpr, inExpr, bodyStmt, pos);
     }
 }
 
