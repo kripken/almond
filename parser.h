@@ -122,16 +122,15 @@ void readSemiAuto(TokenStream& input)
 /**
 Read an identifier token from the input
 */
-ASTNode* readIdent(TokenStream& input)
+std::string readIdent(TokenStream& input)
 {
     auto t = input.read();
 
     if (t->type != Token::IDENT)
         throw new ParseError("expected identifier", t->pos);
 
-    ASTNode* ret = Builder::makeName(t->stringVal.c_str());
+    return t->stringVal;
     // XXX leak    delete t;
-    return ret;
 }
 
 /**
